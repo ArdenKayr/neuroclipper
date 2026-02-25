@@ -1,6 +1,9 @@
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 import os
 import logging
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 logger = logging.getLogger(__name__)
 
