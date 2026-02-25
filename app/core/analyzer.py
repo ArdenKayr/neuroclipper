@@ -1,38 +1,29 @@
-import whisper
-import logging
+import cv2
+import os
 
-logger = logging.getLogger(__name__)
-
-class AIAnalyzer:
-    def __init__(self, model_size="base"):
-        logger.info(f"--- [🧠] Загрузка Whisper ({model_size})...")
-        self.model = whisper.load_model(model_size)
-
-    def transcribe(self, video_path):
-        result = self.model.transcribe(video_path, language="ru")
-        return result['segments']
-
-    def generate_hook_title(self, text_snippet):
-        """Здесь должна быть логика LLM. Пока сделаем умную выжимку."""
-        # В будущем тут будет: return llm.ask("Придумай хайповый заголовок для этого текста")
-        words = text_snippet.split()
-        if len(words) > 5:
-            return " ".join(words[:5]).upper() + "..."
-        return text_snippet.upper()
-
-    def find_highlights(self, segments):
-        """Алгоритм поиска: ищем плотность речи и ключевые слова"""
-        highlights = []
-        for i in range(len(segments) - 2):
-            # Соединяем 3 сегмента для анализа контекста
-            context_text = segments[i]['text'] + segments[i+1]['text']
-            
-            # Простая логика: если есть восклицания или "громкие" слова
-            if any(word in context_text.lower() for word in ["блин", "представляешь", "шок", "смотри"]):
-                highlights.append({
-                    "start": segments[i]['start'],
-                    "end": segments[i+2]['end'],
-                    "text": context_text,
-                    "title": self.generate_hook_title(context_text)
-                })
-        return highlights
+def extract_frames(self, video_path, interval=1):
+    """Вырезает кадры из видео каждую секунду"""
+    frames_dir = "assets/temp_frames"
+    if not os.path.exists(frames_dir):
+        os.makedirs(frames_dir)
+        
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    count = 0
+    frame_paths = []
+    
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Берем каждый N-й кадр (раз в секунду)
+        if count % int(fps * interval) == 0:
+            frame_name = f"frame_{count}.jpg"
+            path = os.path.join(frames_dir, frame_name)
+            cv2.imwrite(path, frame)
+            frame_paths.append(path)
+        count += 1
+        
+    cap.release()
+    return frame_paths
