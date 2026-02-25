@@ -15,7 +15,7 @@ from services.downloader import VideoDownloader
 from core.analyzer import AIAnalyzer
 from core.renderer import VideoRenderer
 
-# Загружаем токен для отправки видео
+# Загружаем токен
 load_dotenv()
 API_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=API_TOKEN)
@@ -25,14 +25,15 @@ async def process_jobs():
     analyzer = AIAnalyzer(model_size="base")
     renderer = VideoRenderer()
     
-    print("--- [🚀] Конвейер NEUROCLIPPER с авто-отправкой запущен...")
+    print("--- [🚀] Конвейер NEUROCLIPPER запущен...")
     
     while True:
         session = Session()
+        # Ищем только невыполненные задачи
         job = session.query(Job).filter(Job.status == 'pending').first()
         
         if job:
-            print(f"--- [⚙️] Обработка задачи #{job.id} для пользователя {job.user_id}")
+            print(f"--- [⚙️] Обработка задачи #{job.id}")
             job.status = 'processing'
             session.commit()
             
@@ -40,38 +41,42 @@ async def process_jobs():
             file_path = dl.download(job.input_url, f"source_{job.id}")
             
             if file_path:
-                # 2. Анализ
-                segments = analyzer.transcribe(file_path)
-                highlights = analyzer.find_highlights(segments)
-                
-                if highlights:
-                    # Берем самый сочный хайлайт (первый)
-                    h = highlights[0]
-                    # 3. Рендеринг
-                    try:
+                # 2. Анализ (теперь получаем сегменты и хайлайты с заголовками)
+                try:
+                    segments = analyzer.transcribe(file_path)
+                    highlights = analyzer.find_highlights(segments)
+                    
+                    if highlights:
+                        h = highlights[0] # Берем лучший момент
+                        
+                        # 3. Рендеринг (передаем ВСЕ нужные аргументы)
                         clip_path = renderer.create_short(
-                            file_path, h['start'], h['end'], h['text'], f"result_{job.id}"
+                            input_path=file_path,
+                            segments=segments,      # Титры
+                            start_time=h['start'],  # Начало
+                            end_time=h['end'],      # Конец
+                            title=h['title'],       # Умный заголовок
+                            output_name=f"result_{job.id}"
                         )
                         
-                        # 4. ОТПРАВКА В ТЕЛЕГРАМ
+                        # 4. Отправка пользователю
                         user = session.query(User).filter(User.id == job.user_id).first()
                         if user:
-                            print(f"--- [📤] Отправка видео пользователю {user.tg_id}...")
                             from aiogram.types import FSInputFile
                             video_file = FSInputFile(clip_path)
                             await bot.send_video(
                                 user.tg_id, 
                                 video_file, 
-                                caption=f"🎬 Твой клип готов!\n\nТекст: {h['text']}"
+                                caption=f"✨ Готово! \n📌 Заголовок: {h['title']}"
                             )
                         
                         job.status = 'done'
-                    except Exception as e:
-                        print(f"--- [❌] Ошибка рендеринга/отправки: {e}")
-                        job.status = 'error'
-                else:
-                    print("--- [🤷] Хайлайты не найдены.")
-                    job.status = 'no_highlights'
+                    else:
+                        print("--- [🤷] Хайлайты не найдены")
+                        job.status = 'no_highlights'
+                except Exception as e:
+                    print(f"--- [❌] Ошибка процесса: {e}")
+                    job.status = 'error'
             else:
                 job.status = 'error'
             
