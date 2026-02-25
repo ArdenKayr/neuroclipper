@@ -5,32 +5,36 @@ import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from dotenv import load_dotenv  # <--- Вот этот импорт мы лечим
 
-# Фикс путей для импорта из соседних папок
+# Настройка путей, чтобы Python видел папку app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.db_models import Job, User
 from models.database import Session
 from models.manager import get_or_create_user
 
+# Загружаем переменные из .env
 load_dotenv()
 API_TOKEN = os.getenv("BOT_TOKEN")
 
 if not API_TOKEN:
-    exit("❌ Ошибка: Токен бота не найден в файле .env!")
+    print("❌ Ошибка: BOT_TOKEN не найден в файле .env")
+    sys.exit(1)
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
-
 URL_PATTERN = r'(https?://(?:www\.)?(?:youtube\.com|youtu\.be|twitch\.tv|vk\.com|rutube\.ru)/\S+)'
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = get_or_create_user(message.from_user.id, message.from_user.username)
-    status = "👑 Super-User" if user.is_superuser else f"Тариф: {user.subscription_type}"
+    status = "👑 ВЛАДЕЛЕЦ" if user.is_superuser else f"Тариф: {user.subscription_type}"
     await message.answer(
-        f"🚀 **NeuroClipper AI**\n\nСтатус: `{status}`\nБаланс: `{user.balance_clips} клипов`\n\n"
-        "Пришли ссылку на видео (YouTube, Twitch, VK, Rutube) для начала."
+        f"🚀 **NEUROCLIPPER AI**\n\n"
+        f"Статус: `{status}`\n"
+        f"Баланс: `{user.balance_clips} клипов`\n\n"
+        "Пришли ссылку на видео (YouTube, Twitch, VK, Rutube), чтобы начать."
     )
 
 @dp.message(F.text.regexp(URL_PATTERN))
@@ -55,7 +59,7 @@ async def start_processing(callback: types.CallbackQuery):
     await callback.answer()
 
 async def main():
-    print("--- [🤖] Бот запущен...")
+    print("--- [🤖] Бот NEUROCLIPPER запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
