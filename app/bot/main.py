@@ -5,6 +5,9 @@ import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from models.db_models import Job, Preset, User  # Берем сами модели
+from models.database import Session             # Берем сессию для работы с БД
+from models.manager import get_or_create_user   # Берем логику регистрации
 
 # Добавляем путь к корню, чтобы видеть модели
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

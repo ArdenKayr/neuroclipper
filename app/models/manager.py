@@ -1,17 +1,11 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from .database import Session
 from .db_models import User
-
-# Указываем путь к базе
-engine = create_engine("sqlite:///neuroclipper.db")
-Session = sessionmaker(bind=engine)
 
 def get_or_create_user(tg_id, username):
     session = Session()
     try:
         user = session.query(User).filter(User.tg_id == tg_id).first()
         if not user:
-            # Первый зашедший в бот становится владельцем (SuperUser)
             is_first = session.query(User).count() == 0
             user = User(
                 tg_id=tg_id, 
@@ -22,7 +16,7 @@ def get_or_create_user(tg_id, username):
             )
             session.add(user)
             session.commit()
-            print(f"--- [👤] Новый пользователь: {username} (SuperUser: {is_first})")
+            session.refresh(user) # Чтобы подгрузить ID из базы
         return user
     finally:
         session.close()
