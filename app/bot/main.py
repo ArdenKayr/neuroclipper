@@ -13,10 +13,15 @@ from models.db_models import Job, User
 from models.database import Session
 from models.manager import get_or_create_user
 
-API_TOKEN = 'ТВОЙ_ТОКЕН_БОТА' # <--- ВСТАВЬ СВОЙ ТОКЕН
+load_dotenv()
+API_TOKEN = os.getenv("BOT_TOKEN")
+
+if not API_TOKEN:
+    exit("❌ Ошибка: Токен бота не найден в файле .env!")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+
 URL_PATTERN = r'(https?://(?:www\.)?(?:youtube\.com|youtu\.be|twitch\.tv|vk\.com|rutube\.ru)/\S+)'
 
 @dp.message(Command("start"))
