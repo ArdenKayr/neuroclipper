@@ -1,60 +1,55 @@
 import time
 import sys
 import os
+import json
 import logging
 
-# Настройка путей
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.database import Session
 from models.db_models import Job
 from services.downloader import VideoDownloader
 from core.analyzer import AIAnalyzer
+from core.renderer import VideoRenderer
 
 def process_jobs():
     dl = VideoDownloader()
-    # Инициализируем ИИ один раз при запуске
     analyzer = AIAnalyzer(model_size="base")
+    renderer = VideoRenderer()
     
-    print("--- [⚒️] Воркер NEUROCLIPPER запущен и готов к ИИ-анализу...")
+    print("--- [🚀] Конвейер NEUROCLIPPER запущен...")
     
     while True:
         session = Session()
-        job = session.query(Job).filter(Job.status == 'pending').order_by(Job.priority.desc()).first()
+        job = session.query(Job).filter(Job.status == 'pending').first()
         
         if job:
-            print(f"--- [🚀] Начинаю работу над задачей {job.id}")
-            job.status = 'downloading'
+            job.status = 'processing'
             session.commit()
             
-            # 1. Скачиваем
-            file_path = dl.download(job.input_url, f"video_{job.id}")
+            # 1. Загрузка
+            file_path = dl.download(job.input_url, f"source_{job.id}")
             
             if file_path:
-                job.status = 'analyzing'
-                session.commit()
+                # 2. Анализ
+                segments = analyzer.transcribe(file_path)
+                highlights = analyzer.find_highlights(segments)
                 
-                # 2. ИИ-Анализ
-                try:
-                    segments = analyzer.transcribe(file_path)
-                    highlights = analyzer.find_highlights(segments)
-                    
-                    # Сохраняем результат в папку с задачей
-                    result_path = file_path.replace(".mp4", "_analysis.json")
-                    with open(result_path, 'w', encoding='utf-8') as f:
-                        import json
-                        json.dump(highlights, f, ensure_ascii=False, indent=4)
-                    
-                    print(f"--- [✨] Анализ завершен! Найдено клипов: {len(highlights)}")
+                # 3. Нарезка (берем первый найденный хайлайт для теста)
+                if highlights:
+                    h = highlights[0]
+                    clip_path = renderer.create_short(
+                        file_path, h['start'], h['end'], h['text'], f"result_{job.id}"
+                    )
+                    print(f"--- [✨] Готово! Клип сохранен: {clip_path}")
                     job.status = 'done'
-                except Exception as e:
-                    print(f"--- [❌] Ошибка анализа: {e}")
-                    job.status = 'error'
+                else:
+                    print("--- [🤷] Хайлайты не найдены.")
+                    job.status = 'no_highlights'
             else:
                 job.status = 'error'
             
             session.commit()
-        
         session.close()
         time.sleep(5)
 
