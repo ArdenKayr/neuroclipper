@@ -1,8 +1,8 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
 
-# Путь к базе данных (в корне проекта)
+# Находим корень проекта, чтобы база лежала в ~/neuroclipper/neuroclipper.db
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'neuroclipper.db')}"
 

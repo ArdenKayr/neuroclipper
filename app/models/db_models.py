@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, JSON, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -9,10 +9,10 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     tg_id = Column(Integer, unique=True, nullable=False)
     username = Column(String)
-    subscription_type = Column(String, default='нарезчик') # нарезчик, стример, агентство
+    subscription_type = Column(String, default='нарезчик')
     is_superuser = Column(Boolean, default=False)
     balance_clips = Column(Integer, default=0)
-    user_settings = Column(JSON, default={}) # Личные вкл/выкл функций
+    user_settings = Column(JSON, default={})
     
     presets = relationship("Preset", back_populates="owner")
     channels = relationship("Channel", back_populates="owner")
@@ -22,9 +22,9 @@ class Preset(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     owner_id = Column(Integer, ForeignKey('users.id'))
-    platform = Column(String) # twitch, youtube, vk, rutube
-    config_data = Column(JSON, nullable=False) # Настройки вебки, музыки, ИИ
-    ad_media_path = Column(String, nullable=True) # Путь к файлу рекламы
+    platform = Column(String)
+    config_data = Column(JSON, nullable=False)
+    ad_media_path = Column(String, nullable=True)
     
     owner = relationship("User", back_populates="presets")
 
@@ -43,6 +43,6 @@ class Job(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
     input_url = Column(String)
-    status = Column(String, default='pending') # pending, processing, done, error
-    priority = Column(Integer, default=0) # 1 для SuperUser
+    status = Column(String, default='pending') # pending, downloading, processing, done, error
+    priority = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
