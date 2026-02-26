@@ -27,9 +27,21 @@ async def check_openrouter_balance():
             print(f"⚠️ Не удалось проверить баланс (HTTP {response.status_code})")
             return
 
-        data = response.json()
-        # Лимит минус использование = текущий остаток
-        credits = data.get('data', {}).get('limit', 0) - data.get('data', {}).get('usage', 0)
+        data = response.json().get('data', {})
+        
+        # Безопасное получение значений: если ключ отсутствует или равен None, используем 0
+        limit = data.get('limit')
+        usage = data.get('usage')
+        
+        limit_val = float(limit) if limit is not None else 0.0
+        usage_val = float(usage) if usage is not None else 0.0
+        
+        # Если лимит равен 0 и использование 0, возможно это безлимитный ключ или ошибка получения
+        if limit_val == 0 and usage_val == 0:
+            print("💰 Баланс: Не ограничен или не удалось получить данные")
+            return
+
+        credits = limit_val - usage_val
         
         if credits < THRESHOLD:
             print(f"🚨 НИЗКИЙ БАЛАНС: ${credits:.2f}")
