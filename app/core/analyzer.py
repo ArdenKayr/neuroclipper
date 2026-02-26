@@ -1,8 +1,10 @@
-import google.generativeai as genai
 import os
-import time
+import cv2
 import json
+import base64
 import logging
+import whisper
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,49 +12,67 @@ logger = logging.getLogger(__name__)
 
 class AIAnalyzer:
     def __init__(self, model_size="base"):
-        # Оставляем Whisper для титров
-        import whisper
+        # Whisper для точных титров (работает локально, блокировки нет)
+        logger.info(f"--- [🧠] Загрузка Whisper ({model_size})...")
         self.whisper_model = whisper.load_model(model_size)
         
-        # Настраиваем Gemini
-        genai.configure(api_key=os.getenv("GEMINI_KEY"))
-        self.vision_model = genai.GenerativeModel('gemini-1.5-pro')
+        # Настройка OpenRouter (обход блокировки Google)
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        )
 
     def transcribe(self, video_path):
-        """Точная расшифровка для титров"""
+        """Расшифровка аудио в текст"""
         result = self.whisper_model.transcribe(video_path, language="ru")
         return result['segments']
 
+    def _extract_frames(self, video_path, num_frames=10):
+        """Извлекает несколько кадров из видео для визуального анализа"""
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        interval = total_frames // (num_frames + 1)
+        
+        base64_frames = []
+        for i in range(num_frames):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, (i + 1) * interval)
+            ret, frame = cap.read()
+            if ret:
+                # Уменьшаем размер кадра для экономии токенов
+                frame = cv2.resize(frame, (640, 360))
+                _, buffer = cv2.imencode(".jpg", frame)
+                base64_frames.append(base64.b64encode(buffer).decode("utf-8"))
+        
+        cap.release()
+        return base64_frames
+
     def find_visual_highlights(self, video_path):
-        """Мультимодальный анализ видео через Gemini"""
-        logger.info("--- [👁️] Отправка видео на визуальный анализ в Gemini...")
+        """Анализ видео через OpenRouter (Gemini 1.5 Pro/Flash)"""
+        logger.info("--- [👁️] Визуальный анализ через OpenRouter...")
         
-        # 1. Загружаем видео в облако Google (временно)
-        video_file = genai.upload_file(path=video_path)
+        base64_frames = self._extract_frames(video_path)
         
-        # Ждем, пока файл обработается на стороне Google
-        while video_file.state.name == "PROCESSING":
-            time.sleep(2)
-            video_file = genai.get_file(video_file.name)
+        # Формируем контент для нейронки (кадры + инструкции)
+        content = [
+            {"type": "text", "text": "Проанализируй эти кадры из видео. Найди 2-3 самых интересных или динамичных момента. Выдай ответ строго в формате JSON списка: [{'start': 10.0, 'end': 25.0, 'title': 'ЗАГОЛОВОК', 'reason': 'почему'}]"}
+        ]
+        
+        for frame in base64_frames:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{frame}"}
+            })
 
-        # 2. Промпт для поиска хайлайтов
-        prompt = """
-        Проанализируй это видео. Найди 3 самых динамичных, эмоциональных или смешных момента для TikTok/Reels.
-        Для каждого момента:
-        1. Укажи время начала и конца.
-        2. Придумай виральный заголовок (крючок).
-        3. Объясни, почему это круто (визуальный контекст).
-        
-        Ответ выдай СТРОГО в формате JSON списка:
-        [{"start": 10.5, "end": 25.0, "title": "ОН ЭТО СДЕЛАЛ!", "reason": "Эмоциональная реакция и прыжок"}]
-        """
-
-        # 3. Получаем ответ
-        response = self.vision_model.generate_content([video_file, prompt])
-        
-        # Очищаем файл в облаке
-        genai.delete_file(video_file.name)
-        
-        # Парсим JSON (убираем лишние кавычки если есть)
-        clean_json = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_json)
+        try:
+            response = self.client.chat.completions.create(
+                model="google/gemini-flash-1.5", # Быстрая и дешевая модель
+                messages=[{"role": "user", "content": content}]
+            )
+            
+            res_text = response.choices[0].message.content
+            # Очистка от markdown-оформления
+            clean_json = res_text.replace('```json', '').replace('```', '').strip()
+            return json.loads(clean_json)
+        except Exception as e:
+            logger.error(f"Ошибка OpenRouter: {e}")
+            return None
