@@ -1,8 +1,6 @@
 import yt_dlp
 import os
-import logging
-
-logger = logging.getLogger(__name__)
+import time
 
 class VideoDownloader:
     def __init__(self, download_path="assets/downloads"):
@@ -10,16 +8,19 @@ class VideoDownloader:
         if not os.path.exists(self.download_path):
             os.makedirs(self.download_path)
 
-    def download(self, url, filename):
+    def download(self, url, job_id):
+        # Добавляем timestamp, чтобы имя было уникальным: source_1_17089456.mp4
+        timestamp = int(time.time())
+        filename = f"source_{job_id}_{timestamp}"
         output_tmpl = os.path.join(self.download_path, f"{filename}.%(ext)s")
         
-        # ФИКС: Принудительно запрашиваем H.264 (avc1), чтобы избежать AV1
         ydl_opts = {
             'format': 'bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': output_tmpl,
             'merge_output_format': 'mp4',
             'noplaylist': True,
             'quiet': True,
+            'nooverwrites': False, # Разрешаем перезапись, если вдруг имя совпало
         }
 
         try:
@@ -27,5 +28,4 @@ class VideoDownloader:
                 info = ydl.extract_info(url, download=True)
                 return ydl.prepare_filename(info)
         except Exception as e:
-            logger.error(f"Ошибка загрузки: {e}")
             return None
