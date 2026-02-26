@@ -5,7 +5,7 @@ from aiogram import Bot
 from dotenv import load_dotenv
 import sys
 
-# Настройка путей
+# Добавляем путь, чтобы скрипт видел модули проекта
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.database import Session
 from models.db_models import User
@@ -14,20 +14,21 @@ load_dotenv()
 
 OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-THRESHOLD = 1.0  # Порог в $1
+THRESHOLD = 1.0  # Уведомлять, если меньше $1
 
 async def check_openrouter_balance():
+    """Проверяет баланс на OpenRouter и шлет алерт в ТГ при низком остатке"""
     url = "https://openrouter.ai/api/v1/auth/key"
     headers = {"Authorization": f"Bearer {OPENROUTER_KEY}"}
     
     try:
         response = requests.get(url, headers=headers)
         if response.status_code != 200:
-            print(f"⚠️ Не удалось проверить баланс (код {response.status_code})")
+            print(f"⚠️ Не удалось проверить баланс (HTTP {response.status_code})")
             return
 
         data = response.json()
-        # Баланс в OpenRouter = лимит - использование
+        # Лимит минус использование = текущий остаток
         credits = data.get('data', {}).get('limit', 0) - data.get('data', {}).get('usage', 0)
         
         if credits < THRESHOLD:
@@ -36,15 +37,19 @@ async def check_openrouter_balance():
             user = session.query(User).first()
             if user:
                 bot = Bot(token=BOT_TOKEN)
-                text = f"🚨 *Внимание!* Баланс OpenRouter: *${credits:.2f}*.\nПора пополнить счет!"
+                text = (
+                    f"🚨 *ВНИМАНИЕ: БАЛАНС ИИ ПОЧТИ ПУСТ*\n\n"
+                    f"На счету осталось: *${credits:.2f}*\n"
+                    f"Пополни здесь: [OpenRouter](https://openrouter.ai/settings/credits)"
+                )
                 await bot.send_message(user.tg_id, text, parse_mode="Markdown")
                 await bot.session.close()
             session.close()
         else:
-            print(f"💰 Баланс: ${credits:.2f} (ОК)")
+            print(f"💰 Баланс в норме: ${credits:.2f}")
             
     except Exception as e:
-        print(f"❌ Ошибка API: {e}")
+        print(f"❌ Ошибка при проверке баланса: {e}")
 
 if __name__ == "__main__":
     asyncio.run(check_openrouter_balance())
