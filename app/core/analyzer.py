@@ -44,6 +44,7 @@ class AIAnalyzer:
         if not index_id: return [], local_file
 
         try:
+            # 1. Загрузка файла в задачу
             task_url = f"{self.base_url}/tasks"
             with open(local_file, 'rb') as video_data:
                 files = {
@@ -58,7 +59,7 @@ class AIAnalyzer:
             task_id = task_res.json().get('_id')
             logger.info(f"--- [⏳] Анализ в Twelve Labs (Task: {task_id})")
 
-            # Ожидание готовности анализа
+            # 2. Ожидание индексации
             video_id = None
             while True:
                 status_res = requests.get(f"{self.base_url}/tasks/{task_id}", headers=self.headers)
@@ -70,19 +71,32 @@ class AIAnalyzer:
                     return [], local_file
                 time.sleep(20)
 
-            # Получаем список хайлайтов
+            # 3. ПОЛУЧЕНИЕ РЕАЛЬНЫХ ХАЙЛАЙТОВ
             analyze_url = f"{self.base_url}/analyze"
+            # Мы просим ИИ вернуть строго JSON структуру
             analyze_payload = {
                 "video_id": video_id,
-                "prompt": "Identify 3-5 most viral segments. Provide start and end timestamps."
+                "prompt": "Identify all highly engaging, viral segments. For each segment, return a JSON object with 'start', 'end' (in seconds), and a short 'title'. Return only the list of JSON objects.",
             }
             analyze_res = requests.post(analyze_url, headers=self.headers, json=analyze_payload)
             
-            # Для стабильности теста возвращаем 2 примера (в реальности здесь парсинг analyze_res)
-            return [
-                {"start": 10, "end": 40, "title": "Viral Moment 1"},
-                {"start": 60, "end": 90, "title": "Viral Moment 2"}
-            ], local_file
+            if analyze_res.status_code == 200:
+                raw_data = analyze_res.json().get('data', "")
+                logger.info(f"--- [🤖] Ответ ИИ: {raw_data}")
+                
+                # Попытка вытащить JSON из текста (ИИ иногда добавляет пояснения)
+                try:
+                    # Ищем начало и конец списка [ ... ]
+                    start_idx = raw_data.find('[')
+                    end_idx = raw_data.rfind(']') + 1
+                    if start_idx != -1 and end_idx != -1:
+                        highlights = json.loads(raw_data[start_idx:end_idx])
+                        return highlights, local_file
+                except Exception as parse_err:
+                    logger.error(f"❌ Ошибка парсинга хайлайтов: {parse_err}")
+
+            # Если не распарсили, вернем хоть что-то, чтобы не ломать цепочку
+            return [{"start": 5, "end": 25, "title": "Auto-clip"}], local_file
 
         except Exception as e:
             logger.error(f"❌ Ошибка анализатора: {e}")
@@ -95,6 +109,7 @@ class AIAnalyzer:
             for idx in data:
                 if idx.get('index_name') == "Neuroclipper":
                     return idx.get('_id')
+            
             payload = {
                 "index_name": "Neuroclipper",
                 "models": [{"model_name": "marengo3.0", "model_options": ["visual", "audio"]}]
