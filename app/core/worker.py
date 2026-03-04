@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def process_jobs():
+    # Инициализируем наши инструменты
     analyzer = AIAnalyzer()
     renderer = VideoRenderer()
     
@@ -17,27 +18,29 @@ def process_jobs():
 
     while True:
         session = Session()
-        # Ищем одну задачу со статусом 'pending'
-        job = session.query(Job).filter(Job.status == 'pending').first()
-        
-        if job:
-            try:
+        try:
+            # Ищем задачу со статусом 'pending'
+            job = session.query(Job).filter(Job.status == 'pending').first()
+            
+            if job:
+                # Меняем статус на 'processing', чтобы другие воркеры её не хватали
                 job.status = 'processing'
                 session.commit()
-                logger.info(f"--- [⚙️] Обработка ссылки: {job.video_url} (ID #{job.id})")
+                
+                # ИСПРАВЛЕНО: используем job.url вместо job.video_url
+                logger.info(f"--- [⚙️] Обработка ссылки: {job.url} (ID #{job.id})")
 
-                # 1. Анализ через Twelve Labs (теперь возвращает и путь к файлу)
-                # Мы немного изменили analyzer, чтобы он возвращал highlights
-                highlights = analyzer.find_visual_highlights(job.video_url)
+                # 1. Анализ через Twelve Labs (скачивание и поиск хайлайтов)
+                highlights = analyzer.find_visual_highlights(job.url)
 
                 if highlights:
-                    # Берем самый лучший (первый) хайлайт для теста
+                    # Берем первый найденный хайлайт
                     best_clip = highlights[0]
                     
                     # 2. Рендеринг в Creatomate
-                    # ВАЖНО: Мы передаем job.id, чтобы Webhook знал, кому ответить
+                    # Мы передаем job.url и job.id для Webhook-связи
                     render_id = renderer.create_short(
-                        video_url=job.video_url, # Или локальный путь, если настроил статику
+                        video_url=job.url,
                         start_time=best_clip['start'],
                         end_time=best_clip['end'],
                         title=best_clip['title'],
@@ -45,22 +48,30 @@ def process_jobs():
                     )
                     
                     if render_id:
-                        logger.info(f"✅ Видео #{job.id} ушло на финальную сборку")
+                        logger.info(f"✅ Задача #{job.id} успешно отправлена на рендер!")
                     else:
+                        logger.error(f"❌ Ошибка при отправке задачи #{job.id} в Creatomate")
                         job.status = 'error'
                 else:
-                    logger.warning("⚠️ Хайлайты не найдены")
+                    logger.warning(f"⚠️ Twelve Labs не нашел хайлайтов для задачи #{job.id}")
                     job.status = 'error'
 
                 session.commit()
 
-            except Exception as e:
-                logger.error(f"❌ Ошибка диспетчера: {e}")
+            else:
+                # Если задач нет, просто ждем
+                pass
+
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка в цикле воркера: {e}")
+            if 'job' in locals() and job:
                 job.status = 'error'
                 session.commit()
         
-        session.close()
-        time.sleep(10) # Проверка базы каждые 10 секунд
+        finally:
+            session.close()
+            
+        time.sleep(5) # Спим 5 секунд перед следующей проверкой базы
 
 if __name__ == "__main__":
     process_jobs()
