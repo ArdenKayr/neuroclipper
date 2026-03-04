@@ -2,7 +2,6 @@ import os
 import requests
 import json
 import logging
-import yt_dlp
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,25 +11,18 @@ class VideoRenderer:
     def __init__(self):
         self.api_key = os.getenv("CREATOMATE_API_KEY")
         self.template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
+        # Твой публичный адрес (замени, если IP другой)
+        self.base_public_url = "http://82.97.243.143:8000/static"
 
-    def _get_direct_url(self, url):
-        """Извлекает прямую ссылку для Creatomate"""
-        if "youtube.com" not in url and "youtu.be" not in url:
-            return url
-        try:
-            ydl_opts = {'format': 'best', 'quiet': True, 'no_warnings': True}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return info.get('url', url)
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка yt-dlp: {e}")
-            return url
-
-    def create_short(self, video_url, start_time, end_time, title, job_id):
-        """Отправляет задачу на рендеринг"""
-        logger.info(f"--- [☁️] Запуск облачного рендеринга для задачи #{job_id}")
+    def create_short(self, local_filename, start_time, end_time, title, job_id):
+        """Отправляет задачу, используя файл, который уже лежит на твоем сервере"""
+        logger.info(f"--- [☁️] Creatomate забирает файл с твоего сервера: {local_filename}")
         
-        direct_url = self._get_direct_url(video_url)
+        # Ссылка, по которой Creatomate скачает видео у тебя
+        # Нам нужно только имя файла из полного пути
+        filename = os.path.basename(local_filename)
+        direct_url = f"{self.base_public_url}/{filename}"
+        
         url = "https://api.creatomate.com/v2/renders"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -52,16 +44,12 @@ class VideoRenderer:
 
         try:
             response = requests.post(url, headers=headers, json=data)
-            res_json = response.json()
-            
-            # Считаем успехом статус 200, 201 или наличие статуса 'planned' в теле ответа
-            if response.status_code in [200, 201] or res_json.get('status') == 'planned':
-                render_id = res_json[0].get('id') if isinstance(res_json, list) else res_json.get('id')
-                logger.info(f"✅ Видео успешно ушло на рендер! ID: {render_id}")
-                return render_id
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Creatomate начал скачивание с твоего сервера!")
+                return True
             else:
-                logger.error(f"❌ Ошибка Creatomate API: {response.text}")
+                logger.error(f"❌ Ошибка Creatomate: {response.text}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка рендерера: {e}")
+            logger.error(f"❌ Ошибка рендерера: {e}")
             return None
