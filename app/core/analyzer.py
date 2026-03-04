@@ -23,7 +23,6 @@ class AIAnalyzer:
         output_path = f"{self.temp_dir}/video_{timestamp}.mp4"
         
         ydl_opts = {
-            # Берем среднее качество, чтобы загрузка в облако была быстрее
             'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': output_path,
             'quiet': True,
@@ -51,7 +50,6 @@ class AIAnalyzer:
                 if idx.get('index_name') == "Neuroclipper":
                     return idx.get('_id')
             
-            logger.info("--- [🏗️] Создание индекса Neuroclipper...")
             payload = {
                 "index_name": "Neuroclipper",
                 "models": [{"model_name": "marengo3.0", "model_options": ["visual", "audio"]}]
@@ -63,39 +61,37 @@ class AIAnalyzer:
             return None
 
     def find_visual_highlights(self, video_url):
-        """Скачивает видео и загружает его файл в Twelve Labs для анализа"""
+        """Загружает файл в Twelve Labs с правильным параметром video_file"""
         index_id = self._get_or_create_index()
         if not index_id: return []
 
-        # 1. СКАЧИВАНИЕ
         local_file = self._download_video(video_url)
         if not local_file or not os.path.exists(local_file):
-            logger.error("❌ Не удалось подготовить файл для загрузки")
             return []
 
         try:
-            # 2. ЗАГРУЗКА ФАЙЛА (multipart/form-data)
             task_url = f"{self.base_url}/tasks"
-            logger.info(f"--- [📤] Отправка файла в Twelve Labs (Размер: {os.path.getsize(local_file) // 1024 // 1024} MB)...")
+            logger.info(f"--- [📤] Отправка файла в Twelve Labs...")
             
-            with open(local_file, 'rb') as video_file:
+            with open(local_file, 'rb') as video_data:
+                # В v1.3 поле ОБЯЗАТЕЛЬНО должно называться video_file
                 files = {
                     "index_id": (None, str(index_id)),
-                    "file": (os.path.basename(local_file), video_file, "video/mp4")
+                    "video_file": (os.path.basename(local_file), video_data, "video/mp4")
                 }
                 task_res = requests.post(task_url, headers=self.headers, files=files)
 
-            # Удаляем локальный файл сразу после отправки, чтобы не забивать место
-            os.remove(local_file)
+            # Очистка локального файла
+            if os.path.exists(local_file): os.remove(local_file)
 
             if task_res.status_code not in [200, 201]:
                 logger.error(f"❌ Ошибка загрузки ({task_res.status_code}): {task_res.text}")
                 return []
 
             task_id = task_res.json().get('_id')
-            logger.info(f"--- [⏳] Анализ запущен (Task: {task_id}). Дождитесь готовности.")
+            logger.info(f"--- [⏳] Видео принято! (Task: {task_id}). Ожидание анализа...")
 
-            # 3. ОЖИДАНИЕ (Polling)
+            # 3. Ожидание (Polling)
             video_id = None
             while True:
                 status_res = requests.get(f"{self.base_url}/tasks/{task_id}", headers=self.headers)
@@ -104,29 +100,25 @@ class AIAnalyzer:
                 
                 if current_status == 'ready':
                     video_id = status_data.get('video_id')
+                    logger.info("✅ Индексация завершена!")
                     break
                 elif current_status in ['failed', 'canceled']:
-                    logger.error(f"❌ Индексация провалена: {status_data}")
+                    logger.error(f"❌ Провал индексации: {status_data}")
                     return []
                 time.sleep(20)
 
-            # 4. ПОЛУЧЕНИЕ ХАЙЛАЙТОВ
+            # 4. Хайлайты
             analyze_url = f"{self.base_url}/analyze"
             analyze_payload = {
                 "video_id": video_id,
-                "prompt": "Identify viral segments with clear start and end timestamps."
+                "prompt": "Identify viral moments."
             }
-            
-            logger.info("--- [🤖] ИИ ищет виральные моменты...")
             analyze_res = requests.post(analyze_url, headers=self.headers, json=analyze_payload)
             
-            if analyze_res.status_code == 200:
-                # В v1.3 мы возвращаем найденный сегмент
-                return [{"start": 10, "end": 40, "title": "Viral Moment"}]
-            
-            return [{"start": 5, "end": 35, "title": "Great Segment"}]
+            # Возвращаем дефолтный сегмент для теста рендеринга
+            return [{"start": 10, "end": 40, "title": "Viral Moment"}]
 
         except Exception as e:
-            logger.error(f"❌ Ошибка в find_visual_highlights: {e}")
+            logger.error(f"❌ Критическая ошибка: {e}")
             if os.path.exists(local_file): os.remove(local_file)
             return []
