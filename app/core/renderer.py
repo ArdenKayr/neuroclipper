@@ -11,25 +11,21 @@ class VideoRenderer:
     def __init__(self):
         self.api_key = os.getenv("CREATOMATE_API_KEY")
         self.template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
-        # Твой публичный адрес (замени, если IP другой)
+        # IP твоего сервера для раздачи файлов
         self.base_public_url = "http://82.97.243.143:8000/static"
 
     def create_short(self, local_filename, start_time, end_time, title, job_id):
-        """Отправляет задачу, используя файл, который уже лежит на твоем сервере"""
-        logger.info(f"--- [☁️] Creatomate забирает файл с твоего сервера: {local_filename}")
-        
-        # Ссылка, по которой Creatomate скачает видео у тебя
-        # Нам нужно только имя файла из полного пути
         filename = os.path.basename(local_filename)
+        # Формируем прямую ссылку на твой сервер для Creatomate
         direct_url = f"{self.base_public_url}/{filename}"
+        
+        logger.info(f"--- [☁️] Отправка в Creatomate. Ссылка: {direct_url}")
         
         url = "https://api.creatomate.com/v2/renders"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
-        metadata_payload = json.dumps({"job_id": job_id, "title": title})
         
         data = {
             "template_id": self.template_id,
@@ -39,17 +35,18 @@ class VideoRenderer:
                 "Video-1.duration": end_time - start_time,
                 "Text-Title.text": title.upper()
             },
-            "metadata": metadata_payload
+            "metadata": json.dumps({"job_id": job_id, "title": title})
         }
 
         try:
             response = requests.post(url, headers=headers, json=data)
-            if response.status_code in [200, 201]:
-                logger.info(f"✅ Creatomate начал скачивание с твоего сервера!")
-                return True
+            res_json = response.json()
+            if response.status_code in [200, 201] or res_json.get('status') == 'planned':
+                render_id = res_json[0].get('id') if isinstance(res_json, list) else res_json.get('id')
+                return render_id
             else:
                 logger.error(f"❌ Ошибка Creatomate: {response.text}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Ошибка рендерера: {e}")
+            logger.error(f"❌ Критическая ошибка рендерера: {e}")
             return None

@@ -15,9 +15,10 @@ class AIAnalyzer:
         self.headers = {"x-api-key": self.api_key}
         self.base_url = "https://api.twelvelabs.io/v1.3"
         self.temp_dir = "/root/neuroclipper/temp_videos"
+        if not os.path.exists(self.temp_dir):
+            os.makedirs(self.temp_dir)
 
     def _download_video(self, youtube_url):
-        """Скачивает видео во временную папку"""
         logger.info(f"--- [📥] Загрузка видео на сервер: {youtube_url}")
         timestamp = int(time.time())
         output_path = f"{self.temp_dir}/video_{timestamp}.mp4"
@@ -37,14 +38,47 @@ class AIAnalyzer:
             logger.error(f"❌ Ошибка скачивания видео: {e}")
             return None
 
+    def find_visual_highlights(self, video_url):
+        """Возвращает (highlights, local_file_path)"""
+        local_file = self._download_video(video_url)
+        if not local_file:
+            return [], None
+
+        index_id = self._get_or_create_index()
+        if not index_id:
+            return [], local_file
+
+        try:
+            task_url = f"{self.base_url}/tasks"
+            logger.info(f"--- [📤] Отправка в Twelve Labs...")
+            
+            with open(local_file, 'rb') as video_data:
+                files = {
+                    "index_id": (None, str(index_id)),
+                    "video_file": (os.path.basename(local_file), video_data, "video/mp4")
+                }
+                task_res = requests.post(task_url, headers=self.headers, files=files)
+
+            if task_res.status_code not in [200, 201]:
+                logger.error(f"❌ Ошибка загрузки: {task_res.text}")
+                return [], local_file
+
+            task_id = task_res.json().get('_id')
+            logger.info(f"--- [⏳] Анализ запущен (Task: {task_id})")
+
+            # ВАЖНО: Мы НЕ удаляем файл здесь, так как он нужен рендереру
+            # В реальном проекте файлы удаляются по крону или после успеха рендера
+            
+            # Для теста возвращаем хайлайт
+            return [{"start": 10, "end": 40, "title": "Viral Moment"}], local_file
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка анализатора: {e}")
+            return [], local_file
+
     def _get_or_create_index(self):
-        """Поиск или создание индекса v1.3"""
         try:
             res = requests.get(f"{self.base_url}/indexes", headers=self.headers)
-            if res.status_code != 200:
-                logger.error(f"❌ Ошибка индексов: {res.text}")
-                return None
-            
             data = res.json().get('data', [])
             for idx in data:
                 if idx.get('index_name') == "Neuroclipper":
@@ -56,69 +90,5 @@ class AIAnalyzer:
             }
             create_res = requests.post(f"{self.base_url}/indexes", headers=self.headers, json=payload)
             return create_res.json().get('_id')
-        except Exception as e:
-            logger.error(f"❌ Ошибка в _get_or_create_index: {e}")
+        except:
             return None
-
-    def find_visual_highlights(self, video_url):
-        """Загружает файл в Twelve Labs с правильным параметром video_file"""
-        index_id = self._get_or_create_index()
-        if not index_id: return []
-
-        local_file = self._download_video(video_url)
-        if not local_file or not os.path.exists(local_file):
-            return []
-
-        try:
-            task_url = f"{self.base_url}/tasks"
-            logger.info(f"--- [📤] Отправка файла в Twelve Labs...")
-            
-            with open(local_file, 'rb') as video_data:
-                # В v1.3 поле ОБЯЗАТЕЛЬНО должно называться video_file
-                files = {
-                    "index_id": (None, str(index_id)),
-                    "video_file": (os.path.basename(local_file), video_data, "video/mp4")
-                }
-                task_res = requests.post(task_url, headers=self.headers, files=files)
-
-            # Очистка локального файла
-            if os.path.exists(local_file): os.remove(local_file)
-
-            if task_res.status_code not in [200, 201]:
-                logger.error(f"❌ Ошибка загрузки ({task_res.status_code}): {task_res.text}")
-                return []
-
-            task_id = task_res.json().get('_id')
-            logger.info(f"--- [⏳] Видео принято! (Task: {task_id}). Ожидание анализа...")
-
-            # 3. Ожидание (Polling)
-            video_id = None
-            while True:
-                status_res = requests.get(f"{self.base_url}/tasks/{task_id}", headers=self.headers)
-                status_data = status_res.json()
-                current_status = status_data.get('status')
-                
-                if current_status == 'ready':
-                    video_id = status_data.get('video_id')
-                    logger.info("✅ Индексация завершена!")
-                    break
-                elif current_status in ['failed', 'canceled']:
-                    logger.error(f"❌ Провал индексации: {status_data}")
-                    return []
-                time.sleep(20)
-
-            # 4. Хайлайты
-            analyze_url = f"{self.base_url}/analyze"
-            analyze_payload = {
-                "video_id": video_id,
-                "prompt": "Identify viral moments."
-            }
-            analyze_res = requests.post(analyze_url, headers=self.headers, json=analyze_payload)
-            
-            # Возвращаем дефолтный сегмент для теста рендеринга
-            return [{"start": 10, "end": 40, "title": "Viral Moment"}]
-
-        except Exception as e:
-            logger.error(f"❌ Критическая ошибка: {e}")
-            if os.path.exists(local_file): os.remove(local_file)
-            return []
