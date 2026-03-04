@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Neuroclipper API Receiver")
+# Раздаем папку с видео, чтобы Creatomate мог их скачивать
 app.mount("/static", StaticFiles(directory="/root/neuroclipper/temp_videos"), name="static")
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 
@@ -29,51 +30,51 @@ class WebhookData(BaseModel):
 
 @app.post("/webhook/update-job")
 async def update_job(data: WebhookData):
-    """Принимает сигнал от Creatomate и пересылает видео в Telegram"""
+    """Принимает сигнал от Creatomate, шлет видео и чистит исходники"""
     logger.info(f"--- [📩] Получен Webhook! Статус: {data.status}")
     
     session = Session()
     try:
         if not data.metadata:
-            logger.warning("⚠️ Webhook пришел без метаданных")
             return {"status": "ignored"}
             
         meta = json.loads(data.metadata)
         job_id = meta.get("job_id")
+        local_file = meta.get("local_file")
+        is_last = meta.get("is_last", False)
         
-        # 1. Ищем задачу в базе
         job = session.query(Job).filter(Job.id == job_id).first()
         if not job:
-            logger.error(f"❌ Задача #{job_id} не найдена в БД")
             return {"status": "error", "message": "Job not found"}
 
-        # 2. Если видео готово (статус 'succeeded' в Creatomate)
+        # Отправка видео пользователю
         if data.status == "succeeded" and data.url:
-            logger.info(f"✅ Видео для задачи #{job_id} готово: {data.url}")
-            
-            # ИСПРАВЛЕНО: Правильный запрос к таблице User
             user = session.query(User).filter(User.id == job.user_id).first()
-            
             if user:
                 try:
                     await bot.send_video(
                         user.tg_id, 
                         data.url, 
-                        caption=f"🎬 *Твой клип готов!*\n\nID задачи: {job_id}\nСтатус: Успешно",
+                        caption=f"🎬 *Твой клип готов!*\n\nНазвание: {meta.get('title')}\nID задачи: {job_id}",
                         parse_mode="Markdown"
                     )
-                    job.status = 'done'
-                    logger.info(f"🚀 Видео отправлено пользователю @{user.tg_id}")
+                    logger.info(f"🚀 Видео отправлено в Telegram")
                 except Exception as tg_err:
-                    logger.error(f"❌ Ошибка отправки в TG: {tg_err}")
-            else:
-                logger.error(f"❌ Пользователь для задачи #{job_id} не найден")
+                    logger.error(f"❌ Ошибка отправки: {tg_err}")
+
+        # Удаление исходника, если это был последний клип или произошла ошибка
+        if (is_last and data.status == "succeeded") or data.status == "failed":
+            if local_file and os.path.exists(local_file):
+                os.remove(local_file)
+                logger.info(f"🗑️ Исходный файл удален: {local_file}")
+            
+            job.status = 'done' if data.status == "succeeded" else 'error'
 
         session.commit()
         return {"status": "ok"}
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка Webhook: {e}")
+        logger.error(f"❌ Ошибка обработки вебхука: {e}")
         return {"status": "error"}
     finally:
         session.close()

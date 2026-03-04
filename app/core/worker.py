@@ -25,32 +25,32 @@ def process_jobs():
                 job.status = 'processing'
                 session.commit()
                 
-                # ИСПРАВЛЕНО: используем job.input_url, как в db_models.py
                 logger.info(f"--- [⚙️] Обработка ссылки: {job.input_url} (ID #{job.id})")
 
-                # 1. Анализ через Twelve Labs. 
-                # Теперь возвращает список моментов и путь к скачанному файлу.
+                # Анализатор возвращает список всех моментов и путь к скачанному файлу
                 highlights, local_file = analyzer.find_visual_highlights(job.input_url)
 
                 if highlights and local_file:
-                    best_clip = highlights[0]
+                    total_clips = len(highlights)
+                    logger.info(f"✅ Найдено хайлайтов: {total_clips}. Начинаю рендеринг всех частей...")
                     
-                    # 2. Рендеринг в Creatomate.
-                    # Передаем путь к локальному файлу, чтобы рендерер сделал публичную ссылку.
-                    render_id = renderer.create_short(
-                        local_filename=local_file,
-                        start_time=best_clip['start'],
-                        end_time=best_clip['end'],
-                        title=best_clip['title'],
-                        job_id=job.id
-                    )
-                    
-                    if render_id:
-                        logger.info(f"✅ Задача #{job.id} отправлена на рендер. ID: {render_id}")
-                    else:
-                        job.status = 'error'
+                    for i, clip in enumerate(highlights):
+                        # Помечаем последний клип, чтобы сервер знал, когда удалять исходник
+                        is_last = (i == total_clips - 1)
+                        
+                        render_id = renderer.create_short(
+                            local_filename=local_file,
+                            start_time=clip['start'],
+                            end_time=clip['end'],
+                            title=clip.get('title', f"Highlight {i+1}"),
+                            job_id=job.id,
+                            is_last=is_last
+                        )
+                        
+                        if render_id:
+                            logger.info(f"  [+] Клип {i+1}/{total_clips} отправлен в Creatomate")
                 else:
-                    logger.warning(f"⚠️ Не удалось подготовить видео для задачи #{job.id}")
+                    logger.warning(f"⚠️ Хайлайты не найдены для задачи #{job.id}")
                     job.status = 'error'
 
                 session.commit()
