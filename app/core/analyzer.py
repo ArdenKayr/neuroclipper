@@ -9,15 +9,13 @@ logger = logging.getLogger(__name__)
 
 class AIAnalyzer:
     def __init__(self):
-        # Очищаем ключ от пробелов
+        # Очищаем ключ от лишних пробелов
         self.api_key = os.getenv("TWELVE_LABS_API_KEY", "").strip()
         self.headers = {"x-api-key": self.api_key}
-        
-        # Переходим на актуальную версию v1.3, чтобы избежать 404
         self.base_url = "https://api.twelvelabs.io/v1.3"
 
     def _get_or_create_index(self):
-        """Проверяет наличие индекса 'Neuroclipper' или создает его в v1.3"""
+        """Проверяет наличие индекса 'Neuroclipper' или создает его по стандартам v1.3"""
         try:
             res = requests.get(f"{self.base_url}/indexes", headers=self.headers)
             
@@ -31,14 +29,14 @@ class AIAnalyzer:
                 if idx.get('index_name') == "Neuroclipper":
                     return idx.get('_id')
             
-            # Если индекса нет, создаем его (используем Marengo 3.0 как наиболее актуальную)
+            # В v1.3 МЫ ИСПОЛЬЗУЕМ 'models' ВМЕСТО 'engines'
             logger.info("--- [🏗️] Создаю новый индекс 'Neuroclipper' (API v1.3)...")
             payload = {
                 "index_name": "Neuroclipper",
-                "engines": [
+                "models": [
                     {
-                        "engine_name": "marengo3.0",
-                        "engine_options": ["visual", "conversation"]
+                        "model_name": "marengo3.0",
+                        "model_options": ["visual", "audio"]
                     }
                 ]
             }
@@ -54,7 +52,7 @@ class AIAnalyzer:
             return None
 
     def find_visual_highlights(self, video_url):
-        """Анализирует видео и находит виральные моменты через /analyze (вместо sunset /summarize)"""
+        """Ищет виральные моменты через эндпоинт /analyze"""
         logger.info(f"--- [👁️] Twelve Labs (v1.3) начинает анализ: {video_url}")
         
         index_id = self._get_or_create_index()
@@ -72,7 +70,7 @@ class AIAnalyzer:
                 return None
             
             task_id = task_res.json().get('_id')
-            logger.info(f"--- [⏳] Видео в очереди (Task: {task_id}). Индексация может занять время...")
+            logger.info(f"--- [⏳] Видео в очереди (Task: {task_id}). Ждем индексации...")
 
             # 2. Ожидание готовности
             video_id = None
@@ -86,33 +84,27 @@ class AIAnalyzer:
                     logger.info("✅ Индексация завершена успешно!")
                     break
                 elif task_status in ['failed', 'canceled']:
-                    logger.error(f"❌ Twelve Labs не смог обработать видео. Статус: {task_status}")
+                    logger.error(f"❌ Ошибка Twelve Labs. Статус: {task_status}")
                     return None
                 
                 time.sleep(15)
 
-            # 3. Получаем хайлайты через новый эндпоинт /analyze
-            # Поскольку /summarize отключен, используем промпт для поиска лучших моментов
+            # 3. Анализ видео и генерация хайлайтов
             analyze_url = f"{self.base_url}/analyze"
             analyze_payload = {
                 "video_id": video_id,
-                "prompt": "Identify 3-5 high-energy, viral segments suitable for social media. Provide start and end timestamps for each."
+                "prompt": "Identify 3-5 high-energy, viral segments suitable for social media. Return start and end timestamps."
             }
-            logger.info("--- [🤖] Генерация хайлайтов через /analyze API...")
+            logger.info("--- [🤖] Запуск /analyze для поиска лучших моментов...")
             analyze_res = requests.post(analyze_url, headers=self.headers, json=analyze_payload)
             
             if analyze_res.status_code == 200:
-                data = analyze_res.json()
-                # Twelve Labs в v1.3 возвращает структурированный ответ. 
-                # Парсим его для получения временных меток.
-                # Примечание: если API возвращает текст, мы можем добавить логику парсинга таймкодов.
-                logger.info(f"✅ Анализ выполнен: {data.get('data')[:100]}...")
-                
-                # В качестве временного решения, если /analyze вернул только текст, 
-                # можно использовать поиск по ключевым моментам или дефолтные отрезки.
+                # В v1.3 ответ от /analyze содержит текстовый разбор моментов
+                logger.info("✅ Анализ выполнен успешно.")
+                # Для теста возвращаем один сегмент, пока идет отладка парсинга таймкодов
                 return [{"start": 10, "end": 40, "title": "Viral Moment"}]
             
-            logger.error(f"❌ Ошибка эндпоинта /analyze: {analyze_res.text}")
+            logger.error(f"❌ Ошибка /analyze: {analyze_res.text}")
             return [{"start": 0, "end": 30, "title": "Интересный момент"}]
 
         except Exception as e:
