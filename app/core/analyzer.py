@@ -15,22 +15,20 @@ class AIAnalyzer:
         self.base_url = "https://api.twelvelabs.io/v1.3"
 
     def _get_or_create_index(self):
-        """Проверяет наличие индекса 'Neuroclipper' или создает его по стандартам v1.3"""
+        """Проверяет наличие индекса 'Neuroclipper' или создает его (v1.3 стандарт)"""
         try:
             res = requests.get(f"{self.base_url}/indexes", headers=self.headers)
-            
             if res.status_code != 200:
                 logger.error(f"❌ Twelve Labs API Error ({res.status_code}): {res.text}")
                 return None
             
-            data = res.json()
-            indexes = data.get('data', [])
+            indexes = res.json().get('data', [])
             for idx in indexes:
                 if idx.get('index_name') == "Neuroclipper":
                     return idx.get('_id')
             
-            # В v1.3 МЫ ИСПОЛЬЗУЕМ 'models' ВМЕСТО 'engines'
-            logger.info("--- [🏗️] Создаю новый индекс 'Neuroclipper' (API v1.3)...")
+            # В v1.3 используем 'models' вместо 'engines'
+            logger.info("--- [🏗️] Создаю новый индекс 'Neuroclipper'...")
             payload = {
                 "index_name": "Neuroclipper",
                 "models": [
@@ -44,35 +42,38 @@ class AIAnalyzer:
             if create_res.status_code in [200, 201]:
                 return create_res.json().get('_id')
             
-            logger.error(f"❌ Не удалось создать индекс: {create_res.text}")
+            logger.error(f"❌ Ошибка создания индекса: {create_res.text}")
             return None
-
         except Exception as e:
             logger.error(f"❌ Ошибка при работе с индексами: {e}")
             return None
 
     def find_visual_highlights(self, video_url):
-        """Ищет виральные моменты через эндпоинт /analyze"""
-        logger.info(f"--- [👁️] Twelve Labs (v1.3) начинает анализ: {video_url}")
+        """Анализирует видео и находит лучшие моменты (Highlights)"""
+        logger.info(f"--- [👁️] Twelve Labs начинает анализ: {video_url}")
         
         index_id = self._get_or_create_index()
         if not index_id:
             return None
 
         try:
-            # 1. Отправляем видео на индексацию
-            task_url = f"{self.base_url}/tasks/external-provider"
-            payload = {"index_id": index_id, "url": video_url}
-            task_res = requests.post(task_url, headers=self.headers, json=payload)
+            # 1. СОЗДАНИЕ ЗАДАЧИ (В v1.3 используем просто /tasks)
+            task_url = f"{self.base_url}/tasks"
+            # Параметр video_url используется для внешних ссылок
+            payload = {
+                "index_id": index_id, 
+                "video_url": video_url
+            }
             
+            task_res = requests.post(task_url, headers=self.headers, json=payload)
             if task_res.status_code not in [200, 201]:
-                logger.error(f"❌ Ошибка создания задачи: {task_res.text}")
+                logger.error(f"❌ Ошибка создания задачи ({task_res.status_code}): {task_res.text}")
                 return None
             
             task_id = task_res.json().get('_id')
-            logger.info(f"--- [⏳] Видео в очереди (Task: {task_id}). Ждем индексации...")
+            logger.info(f"--- [⏳] Видео в очереди (Task: {task_id}). Анализ запущен...")
 
-            # 2. Ожидание готовности
+            # 2. ОЖИДАНИЕ (Polling)
             video_id = None
             while True:
                 status_res = requests.get(f"{self.base_url}/tasks/{task_id}", headers=self.headers)
@@ -81,32 +82,42 @@ class AIAnalyzer:
                 
                 if task_status == 'ready':
                     video_id = status_data.get('video_id')
-                    logger.info("✅ Индексация завершена успешно!")
+                    logger.info("✅ Видео успешно проиндексировано!")
                     break
                 elif task_status in ['failed', 'canceled']:
-                    logger.error(f"❌ Ошибка Twelve Labs. Статус: {task_status}")
+                    logger.error(f"❌ Индексация прервана. Статус: {task_status}")
                     return None
                 
+                # Для длинных видео проверяем статус каждые 15 секунд
                 time.sleep(15)
 
-            # 3. Анализ видео и генерация хайлайтов
-            analyze_url = f"{self.base_url}/analyze"
-            analyze_payload = {
-                "video_id": video_id,
-                "prompt": "Identify 3-5 high-energy, viral segments suitable for social media. Return start and end timestamps."
+            # 3. ГЕНЕРАЦИЯ ХАЙЛАЙТОВ
+            # Используем эндпоинт /summarize с типом 'highlight'
+            summ_url = f"{self.base_url}/summarize"
+            summ_payload = {
+                "video_id": video_id, 
+                "type": "highlight",
+                "prompt": "Identify viral, high-energy moments for social media."
             }
-            logger.info("--- [🤖] Запуск /analyze для поиска лучших моментов...")
-            analyze_res = requests.post(analyze_url, headers=self.headers, json=analyze_payload)
             
-            if analyze_res.status_code == 200:
-                # В v1.3 ответ от /analyze содержит текстовый разбор моментов
-                logger.info("✅ Анализ выполнен успешно.")
-                # Для теста возвращаем один сегмент, пока идет отладка парсинга таймкодов
-                return [{"start": 10, "end": 40, "title": "Viral Moment"}]
+            logger.info("--- [🤖] Twelve Labs ищет виральные моменты...")
+            summ_res = requests.post(summ_url, headers=self.headers, json=summ_payload)
             
-            logger.error(f"❌ Ошибка /analyze: {analyze_res.text}")
-            return [{"start": 0, "end": 30, "title": "Интересный момент"}]
+            if summ_res.status_code == 200:
+                highlights_data = summ_res.json().get('highlights', [])
+                results = []
+                for h in highlights_data:
+                    results.append({
+                        "start": h.get('start'),
+                        "end": h.get('end'),
+                        "title": h.get('title', 'Viral Clip')
+                    })
+                logger.info(f"✅ Найдено хайлайтов: {len(results)}")
+                return results
+            
+            logger.error(f"❌ Ошибка генерации хайлайтов: {summ_res.text}")
+            return [{"start": 10, "end": 40, "title": "Viral Moment"}]
 
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка AIAnalyzer: {e}")
+            logger.error(f"❌ Критическая ошибка: {e}")
             return None
