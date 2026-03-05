@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, JSON, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, JSON, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -7,7 +7,8 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
-    tg_id = Column(Integer, unique=True, nullable=False)
+    # Используем BigInteger для безопасности Telegram ID
+    tg_id = Column(BigInteger, unique=True, nullable=False)
     username = Column(String)
     subscription_type = Column(String, default='нарезчик')
     is_superuser = Column(Boolean, default=False)

@@ -8,13 +8,13 @@ from models.database import engine
 from models.db_models import Base
 
 def init_db():
-    print("--- [🏗️] Начинаю создание таблиц в базе данных...")
+    print("--- [🏗️] Начинаю создание таблиц в PostgreSQL...")
     try:
-        # Эта команда берет все классы из db_models и создает их в SQLite
+        # SQLAlchemy сама создаст таблицы в той БД, которая указана в DATABASE_URL
         Base.metadata.create_all(bind=engine)
         print("--- [✅] Таблицы созданы успешно: users, presets, channels, jobs")
     except Exception as e:
-        print(f"--- [❌] Ошибка при инициализации: {e}")
+        print(f"--- [❌] Ошибка при инициализации в Postgres: {e}")
 
 if __name__ == "__main__":
     init_db()

@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv  # <--- Вот этот импорт мы лечим
+from core.tasks import process_video_job
 
 # Настройка путей, чтобы Python видел папку app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -50,12 +51,18 @@ async def start_processing(callback: types.CallbackQuery):
     session = Session()
     db_user = session.query(User).filter(User.tg_id == callback.from_user.id).first()
     
+    # 1. Создаем запись в базе для трекинга
     new_job = Job(user_id=db_user.id, input_url=url, priority=1 if db_user.is_superuser else 0)
     session.add(new_job)
     session.commit()
+    
+    # 2. ЗАПУСКАЕМ ФОНОВУЮ ЗАДАЧУ ЧЕРЕЗ CELERY
+    process_video_job.delay(new_job.id) 
+    
+    job_id = new_job.id
     session.close()
 
-    await callback.message.edit_text("✅ Задача добавлена в очередь. Ожидайте результат!")
+    await callback.message.edit_text(f"✅ Задача #{job_id} запущена! Ожидайте результат.")
     await callback.answer()
 
 async def main():

@@ -1,10 +1,24 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
-# Находим корень проекта, чтобы база лежала в ~/neuroclipper/neuroclipper.db
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'neuroclipper.db')}"
+load_dotenv()
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Берем URL из .env. В Postgres не нужен BASE_DIR для пути к файлу.
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("❌ DATABASE_URL не найден в .env. Проверь настройки!")
+
+# Настройки для PostgreSQL: 
+# pool_size — сколько соединений держать открытыми
+# max_overflow — сколько временных соединений можно создать сверху
+engine = create_engine(
+    DATABASE_URL, 
+    pool_size=10, 
+    max_overflow=20,
+    pool_pre_ping=True # Проверяет живое ли соединение перед использованием
+)
+
 Session = sessionmaker(bind=engine)
