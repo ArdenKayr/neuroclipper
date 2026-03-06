@@ -11,21 +11,15 @@ class VideoRenderer:
     def __init__(self):
         self.api_key = os.getenv("CREATOMATE_API_KEY")
         self.template_id = os.getenv("CREATOMATE_TEMPLATE_ID")
-        # Твой публичный IP для доступа Creatomate к файлам
-        self.base_public_url = "http://82.97.243.143:8000/static"
 
-    def create_short(self, local_filename, start_time, end_time, title, job_id, is_last=False):
-        """Отправляет задачу на рендеринг с метаданными для последующей очистки"""
-        filename = os.path.basename(local_filename)
-        direct_url = f"{self.base_public_url}/{filename}"
-        
+    def create_short(self, s3_url, start_time, end_time, title, job_id, local_filename, is_last=False):
+        """Отправляет задачу на рендеринг, используя прямую ссылку из R2"""
         url = "https://api.creatomate.com/v2/renders"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
-        # Передаем информацию о файле и очередности в метаданных
         metadata = {
             "job_id": job_id,
             "title": title,
@@ -36,7 +30,7 @@ class VideoRenderer:
         data = {
             "template_id": self.template_id,
             "modifications": {
-                "Video-1.source": direct_url,
+                "Video-1.source": s3_url, # Источник — облако R2
                 "Video-1.trim_start": start_time,
                 "Video-1.duration": end_time - start_time,
                 "Text-Title.text": title.upper()
@@ -47,7 +41,7 @@ class VideoRenderer:
         try:
             response = requests.post(url, headers=headers, json=data)
             res_json = response.json()
-            if response.status_code in [200, 201] or res_json.get('status') == 'planned':
+            if response.status_code in [200, 201]:
                 render_id = res_json[0].get('id') if isinstance(res_json, list) else res_json.get('id')
                 return render_id
             else:
