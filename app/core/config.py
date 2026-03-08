@@ -20,15 +20,19 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     CREATOMATE_API_KEY: str
     CREATOMATE_TEMPLATE_ID: str
+    CAPTIONS_API_KEY: Optional[str] = None  # Исправлено здесь
     
-    # --- VIZARD ---
-    VIZARD_API_KEY: Optional[str] = None
+    # --- АНАЛИЗ ВИДЕО ---
     ENABLE_VIZARD: bool = False
+    VIZARD_API_KEY: Optional[str] = None
     TWELVE_LABS_API_KEY: Optional[str] = None
     
     # --- МОНИТОРИНГ И ОЧИСТКА ---
     SENTRY_DSN: Optional[str] = None
     CLEANUP_THRESHOLD_DAYS: int = 1
+
+    # --- СЕРВЕРНЫЕ НАСТРОЙКИ ---
+    WEBHOOK_URL: str
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
