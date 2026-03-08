@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, PostgresDsn, RedisDsn
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -10,10 +9,13 @@ class Settings(BaseSettings):
     CREATOMATE_API_KEY: str
     CREATOMATE_TEMPLATE_ID: str
     OPENROUTER_API_KEY: str
+    VIZARD_API_KEY: str = ""  
+    OPENAI_API_KEY: str = ""  
+    CAPTIONS_API_KEY: str = "" # Новый ключ для динамичных субтитров
     SENTRY_DSN: str = ""
 
     # --- Базы данных ---
-    DATABASE_URL: str # Используем str для совместимости с SQLAlchemy
+    DATABASE_URL: str
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # --- Cloudflare R2 ---
