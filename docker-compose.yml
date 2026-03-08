@@ -1,28 +1,37 @@
-version: '3.8'
-
 services:
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    restart: always
     environment:
       POSTGRES_USER: n_user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: neuroclipper
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n_user -d neuroclipper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
+    restart: always
 
   bot:
     build: .
+    restart: always
     command: python app/bot/main.py
     env_file: .env
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   worker:
     build: .
+    restart: always
     command: celery -A celery_app worker --loglevel=info --concurrency=2
     env_file: .env
     depends_on:
@@ -31,10 +40,13 @@ services:
 
   api:
     build: .
+    restart: always
     command: uvicorn api.server:app --host 0.0.0.0 --port 8000
     env_file: .env
     ports:
       - "8000:8000"
+    depends_on:
+      - db
 
 volumes:
   postgres_data:
