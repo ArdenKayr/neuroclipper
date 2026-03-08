@@ -17,43 +17,47 @@ class AIAnalyzer:
 
     async def find_visual_highlights(self, url: str, job_id: int) -> Tuple[List[Dict[str, Any]], str, str]:
         """
-        Основной метод анализа:
-        1. Скачивание (локально)
-        2. Загрузка в S3 (для рендерера)
-        3. Анализ через Vizard (поиск моментов)
+        Полный цикл анализа видео.
         """
         local_file = None
         s3_url = None
         highlights = []
 
         try:
-            # 1. Скачивание
+            # 1. Скачивание (нам все равно нужен локальный файл для Whisper в будущем)
             logger.info(f"--- [📥] Загрузка видео для задачи #{job_id}")
             local_file = await self.downloader.download_video(url, job_id)
             if not local_file:
-                raise Exception("Ошибка при скачивании видео")
+                raise Exception("Не удалось скачать видео")
 
-            # 2. Загрузка в S3 (параллельно с анализом, если API позволяет ссылку)
-            logger.info(f"--- [☁️] Загрузка оригинала в R2...")
-            s3_url = await self.s3.upload_file(local_file, f"source_{job_id}_{int(asyncio.get_event_loop().time())}.mp4")
+            # 2. Загрузка в S3 (для рендерера Creatomate)
+            logger.info(f"--- [☁️] Загрузка исходника в Cloudflare R2...")
+            s_name = f"source_{job_id}.mp4"
+            s3_url = await self.s3.upload_file(local_file, s_name)
 
-            # 3. Умный поиск хайлайтов через Vizard
+            # 3. Интеллектуальный анализ через Vizard
             if settings.VIZARD_API_KEY:
-                logger.info(f"--- [📈] Запуск анализа Vizard API...")
+                logger.info(f"--- [📈] Vizard: Запуск анализа контента...")
                 try:
-                    # В реальном API можно передать s3_url или исходный url
+                    # Отправляем на анализ оригинальный URL (Vizard сам его скачает)
                     project_id = await self.vizard.request_analysis(url)
-                    highlights = await self.vizard.poll_analysis(project_id)
+                    highlights = await self.vizard.poll_results(project_id)
                 except Exception as e:
-                    logger.error(f"❌ Ошибка Vizard API: {e}. Используем fallback.")
-            
-            # Fallback: если Vizard не сработал или нет ключа, берем первые 30 секунд
+                    logger.error(f"❌ Ошибка Vizard: {e}")
+            else:
+                logger.warning("⚠️ VIZARD_API_KEY отсутствует. Работаю в демо-режиме (нарезка 0-60 сек).")
+
+            # 4. Fallback (если API не вернуло ничего или нет ключа)
             if not highlights:
-                logger.warning("⚠️ Хайлайты не найдены. Создаем fallback-фрагмент (0-60 сек).")
-                highlights = [{"start": 0, "end": 60, "score": 0, "title": "Highlight (Fallback)"}]
+                highlights = [{
+                    "start": 0, 
+                    "end": 60, 
+                    "score": 0, 
+                    "title": "Демо-клип (Vizard недоступен)"
+                }]
 
             return highlights, local_file, s3_url
 
         except Exception as e:
-            logger.error(f"❌ Ошибка в AIAnalyzer: {e}")
+            logger.error(f"❌ Критическая ошибка в AIAnalyzer: {e}")
             return [], "", ""
