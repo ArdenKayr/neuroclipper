@@ -1,20 +1,24 @@
 import sys
 import os
+import asyncio
 
-# Добавляем путь к папке app, чтобы Python видел наши модели
+# Добавляем путь к папке app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.database import engine
 from models.db_models import Base
 
-def init_db():
-    print("--- [🏗️] Начинаю создание таблиц в PostgreSQL...")
+async def init_db():
+    print("--- [🏗️] Начинаю создание таблиц в PostgreSQL (Async)...")
     try:
-        # SQLAlchemy сама создаст таблицы в той БД, которая указана в DATABASE_URL
-        Base.metadata.create_all(bind=engine)
-        print("--- [✅] Таблицы созданы успешно: users, presets, channels, jobs")
+        async with engine.begin() as conn:
+            # Создаем все таблицы
+            await conn.run_sync(Base.metadata.create_all)
+        print("--- [✅] Таблицы созданы успешно: users, transaction_logs, presets, channels, jobs")
     except Exception as e:
         print(f"--- [❌] Ошибка при инициализации в Postgres: {e}")
+    finally:
+        await engine.dispose()
 
 if __name__ == "__main__":
-    init_db()
+    asyncio.run(init_db())
