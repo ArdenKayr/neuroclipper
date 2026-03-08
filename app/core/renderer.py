@@ -26,23 +26,32 @@ class VideoRenderer:
         style: str = "dynamic",
         is_last: bool = False
     ) -> str:
+        """
+        Отправляет запрос на рендер в Creatomate.
+        Поле metadata теперь передается строго как JSON-строка.
+        """
         duration = float(end_time) - float(start_time)
         
-        # Убедитесь, что в шаблоне Creatomate слой называется "Video-1"
+        # Данные для модификации шаблона
+        modifications = {
+            "Video-1.source": s3_url,
+            "Video-1.time": float(start_time),
+            "Video-1.duration": float(duration),
+            "Video-1.fit": "cover",
+            "Video-1.crop": "smart" 
+        }
+
+        # Creatomate требует, чтобы metadata была строкой
+        metadata_str = json.dumps({
+            "job_id": str(job_id),
+            "is_last": str(is_last).lower(),
+            "title": title
+        })
+
         payload = {
             "template_id": self.template_id,
-            "modifications": {
-                "Video-1.source": s3_url,
-                "Video-1.time": float(start_time),
-                "Video-1.duration": float(duration),
-                "Video-1.fit": "cover",
-                "Video-1.crop": "smart"
-            },
-            "metadata": {
-                "job_id": str(job_id),
-                "is_last": str(is_last).lower(),
-                "title": title
-            }
+            "modifications": modifications,
+            "metadata": metadata_str
         }
 
         try:
@@ -54,14 +63,9 @@ class VideoRenderer:
                     return None
                 
                 data = response.json()
-                # Безопасное получение ID
-                if isinstance(data, list) and len(data) > 0:
-                    render_id = data[0].get('id')
-                elif isinstance(data, dict):
-                    render_id = data.get('id')
-                else:
-                    render_id = "unknown"
-
+                # Creatomate возвращает список объектов рендера
+                render_id = data[0]['id'] if isinstance(data, list) else data.get('id')
+                
                 logger.info(f"--- [🎥] Рендер запущен успешно. ID: {render_id}")
                 return render_id
         except Exception as e:
