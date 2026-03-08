@@ -18,47 +18,48 @@ class SmartLLMService:
         }
 
     async def find_highlights(self, transcript: str) -> List[Dict[str, Any]]:
-        """
-        Анализирует текст и находит 5 виральных хайлайтов.
-        """
         if not self.api_key:
             logger.error("❌ OPENROUTER_API_KEY не задан!")
             return []
 
-        prompt = f"""
-Ты — эксперт по виральному контенту (TikTok, Reels, Shorts). 
-Проанализируй транскрипт видео и выдели 5 самых захватывающих моментов.
+        # Ограничиваем транскрипт, чтобы не превысить лимиты контекста
+        truncated_transcript = transcript[:40000]
 
-ПРАВИЛА:
-1. Длительность каждого момента: 30-60 секунд.
-2. Каждый момент должен иметь "хук" (захватывающее начало).
-3. Ответ должен быть СТРОГО в формате JSON списка объектов.
+        prompt = f"""
+Ты — эксперт по виральности. Проанализируй текст и выдели 5 лучших моментов для Shorts (по 30-60 сек).
+Верни ответ СТРОГО в формате JSON списка объектов без лишнего текста.
 
 ТРАНСКРИПТ:
-{transcript[:40000]}
+{truncated_transcript}
 
-ФОРМАТ JSON:
+ФОРМАТ ОТВЕТА:
 [
-  {{"start": 10.5, "end": 45.0, "title": "Название момента", "reason": "Почему это вирально"}},
-  ...
+  {{"start": 10.5, "end": 45.0, "title": "Интригующее название", "reason": "Почему это круто"}}
 ]
 """
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=90.0) as client:
                 payload = {
                     "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}]
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
                 }
                 response = await client.post(self.url, json=payload, headers=self.headers)
                 response.raise_for_status()
                 
                 content = response.json()['choices'][0]['message']['content']
-                # Очистка от markdown-мусора, если LLM его добавит
-                content = content.replace("```json", "").replace("```", "").strip()
+                # Очистка текста от возможных пояснений модели
+                clean_json = content.replace("```json", "").replace("```", "").strip()
                 
-                highlights = json.loads(content)
-                logger.info(f"--- [🧠] Claude нашел {len(highlights)} моментов.")
-                return highlights
+                # Ищем начало и конец массива, если модель добавила лишний текст
+                start_idx = clean_json.find("[")
+                end_idx = clean_json.rfind("]") + 1
+                if start_idx != -1 and end_idx != -1:
+                    clean_json = clean_json[start_idx:end_idx]
+
+                highlights = json.loads(clean_json)
+                logger.info(f"--- [🧠] Claude успешно выделил {len(highlights)} хайлайтов.")
+                return highlights[:5]
         except Exception as e:
-            logger.error(f"❌ Ошибка LLM анализа: {e}")
+            logger.error(f"❌ Ошибка LLM анализа (400 или JSON): {e}")
             return []

@@ -21,19 +21,18 @@ class VideoRenderer:
         end_time: float, 
         title: str, 
         job_id: int,
+        local_filename: str = None, # Добавлено для совместимости
         style: str = "dynamic",
         is_last: bool = False
     ) -> str:
         """
-        Отправляет запрос на рендер.
-        Использует 'smart' кадрирование Creatomate для удержания лица в кадре.
+        Отправляет запрос на рендер в Creatomate.
         """
-        duration = end_time - start_time
+        duration = float(end_time) - float(start_time)
         
-        # Инструкции для шаблона
         modifications = {
             "Video-1.source": s3_url,
-            "Video-1.time": start_time,
+            "Video-1.time": float(start_time),
             "Video-1.duration": duration,
             "Video-1.fit": "cover",
             "Video-1.crop": "smart" 
@@ -42,7 +41,6 @@ class VideoRenderer:
         payload = {
             "template_id": self.template_id,
             "modifications": modifications,
-            # Метаданные помогут нам в server.py понять, кому слать готовый файл
             "metadata": {
                 "job_id": str(job_id),
                 "title": title,
@@ -56,7 +54,6 @@ class VideoRenderer:
                 response.raise_for_status()
                 data = response.json()
                 
-                # Creatomate возвращает список объектов рендера
                 render_id = data[0]['id']
                 logger.info(f"--- [🎥] Рендер запущен в Creatomate. Render ID: {render_id}")
                 return render_id
