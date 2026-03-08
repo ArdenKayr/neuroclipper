@@ -17,46 +17,42 @@ class AIAnalyzer:
 
     async def find_visual_highlights(self, url: str, job_id: int) -> Tuple[List[Dict[str, Any]], str, str]:
         """
-        Пайплайн: Скачивание -> S3 -> Vizard.
+        Асинхронный пайплайн анализа.
         """
         local_file = None
         s3_url = None
         highlights = []
 
         try:
-            # 1. Скачивание (запускаем в потоке, чтобы не блокировать асинхронность)
+            # 1. Скачивание (нужно для локального Whisper в будущем)
             logger.info(f"--- [📥] Загрузка видео для задачи #{job_id}")
             loop = asyncio.get_event_loop()
             local_file = await loop.run_in_executor(None, self.downloader.download_video, url, job_id)
             
-            if not local_file or not os.path.exists(local_file):
-                raise Exception("Ошибка: Файл не был скачан.")
+            if not local_file:
+                raise Exception("Ошибка: Видео не скачано.")
 
-            # 2. Загрузка в S3
-            logger.info(f"--- [☁️] Загрузка оригинала в Cloudflare R2...")
+            # 2. Загрузка в S3 (параллельно, пока Vizard думает)
+            logger.info(f"--- [☁️] Резервное копирование в R2...")
             s_name = os.path.basename(local_file)
             s3_url = await loop.run_in_executor(None, self.s3.upload_file, local_file, s_name)
-            logger.info(f"--- [🔗] Ссылка в R2: {s3_url}")
 
             # 3. Vizard AI Анализ
             if settings.VIZARD_API_KEY:
                 logger.info(f"--- [📈] Запуск анализа Vizard API...")
                 try:
-                    # Попробуем отправить ссылку на R2 (некоторые API лучше едят прямые ссылки на MP4)
-                    project_id = await self.vizard.request_analysis(s3_url)
+                    # Шлем оригинальный URL (Vizard сам выкачает метаданные YouTube)
+                    project_id = await self.vizard.request_analysis(url)
                     highlights = await self.vizard.poll_results(project_id)
                 except Exception as e:
                     logger.error(f"❌ Ошибка Vizard API: {e}")
-            else:
-                logger.warning("⚠️ VIZARD_API_KEY не задан. Используем fallback.")
-
-            # 4. Если ничего не нашли — возвращаем 60 секунд для теста
+            
             if not highlights:
-                logger.warning("⚠️ Хайлайты не получены. Применяем демо-нарезку.")
+                logger.warning("⚠️ Хайлайты не получены. Используем демо-нарезку.")
                 highlights = [{"start": 0, "end": 60, "score": 0, "title": "Демо-клип (Fallback)"}]
 
             return highlights, local_file, s3_url
 
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка AIAnalyzer: {e}")
+            logger.error(f"❌ Ошибка AIAnalyzer: {e}")
             return [], local_file or "", s3_url or ""
