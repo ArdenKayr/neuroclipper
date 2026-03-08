@@ -17,6 +17,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   bot:
     build: .
@@ -27,16 +32,19 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   worker:
     build: .
     restart: always
-    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    # Concurrency 2 ограничена для экономии RAM, можно увеличить при росте мощностей
+    command: celery -A core.tasks worker --loglevel=info --concurrency=2
     env_file: .env
     depends_on:
-      - redis
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   api:
     build: .
@@ -46,7 +54,18 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+
+  flower:
+    image: mher/flower:latest
+    restart: always
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
 
 volumes:
   postgres_data:
