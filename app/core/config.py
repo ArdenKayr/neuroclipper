@@ -15,19 +15,20 @@ class Settings(BaseSettings):
     S3_PUBLIC_URL: str
 
     # --- API KEYS ---
+    OPENROUTER_API_KEY: str
+    OPENROUTER_MODEL: str = "anthropic/claude-3.5-sonnet" # Наш новый "мозг"
+    OPENAI_API_KEY: str
     CREATOMATE_API_KEY: str
     CREATOMATE_TEMPLATE_ID: str
+    
+    # --- VIZARD (OFF BY DEFAULT) ---
     VIZARD_API_KEY: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
-    CAPTIONS_API_KEY: Optional[str] = None
-    TWELVE_LABS_API_KEY: Optional[str] = None
-    
-    # --- МОНИТОРИНГ ---
+    ENABLE_VIZARD: bool = False # Флаг включения Vizard
+
+    # --- МОНИТОРИНГ И ОЧИСТКА ---
     SENTRY_DSN: Optional[str] = None
-    
-    # --- НАСТРОЙКИ ОЧИСТКИ ---
     CLEANUP_THRESHOLD_DAYS: int = 1
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-settings = Settings()   
+settings = Settings()
