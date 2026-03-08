@@ -13,6 +13,7 @@ class SmartLLMService:
         self.url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": "https://neuroclipper.ai",
             "Content-Type": "application/json"
         }
 
@@ -21,15 +22,12 @@ class SmartLLMService:
             logger.error("❌ OPENROUTER_API_KEY не задан!")
             return []
 
-        # Ограничиваем транскрипт для стабильности
-        text_chunk = transcript[:30000]
-
         prompt = f"""
-Analyze this transcript and find 5 viral moments (30-60 sec each).
-Return ONLY a raw JSON array of objects.
+Analyze this transcript and find 5 viral highlights for Shorts (30-60 sec each).
+Return ONLY a raw JSON array.
 
 TRANSCRIPT:
-{text_chunk}
+{transcript[:30000]}
 
 JSON FORMAT:
 [
@@ -40,7 +38,8 @@ JSON FORMAT:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 payload = {
                     "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}]
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
                 }
                 response = await client.post(self.url, json=payload, headers=self.headers)
                 
@@ -48,16 +47,20 @@ JSON FORMAT:
                     logger.error(f"❌ OpenRouter Error ({response.status_code}): {response.text}")
                     return []
                 
-                content = response.json()['choices'][0]['message']['content']
-                # Очистка JSON
-                clean_json = content.replace("```json", "").replace("```", "").strip()
+                data = response.json()
+                content = data['choices'][0]['message']['content']
                 
+                # Очистка JSON от возможных артефактов
+                clean_json = content.replace("```json", "").replace("```", "").strip()
                 start_idx = clean_json.find("[")
                 end_idx = clean_json.rfind("]") + 1
+                
                 if start_idx != -1 and end_idx != -1:
                     clean_json = clean_json[start_idx:end_idx]
-
-                return json.loads(clean_json)[:5]
+                    return json.loads(clean_json)[:5]
+                
+                logger.warning("⚠️ LLM не вернула корректный массив JSON")
+                return []
         except Exception as e:
-            logger.error(f"❌ Ошибка LLM: {e}")
+            logger.error(f"❌ Ошибка LLM: {str(e)}")
             return []

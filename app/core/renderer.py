@@ -11,7 +11,7 @@ class VideoRenderer:
         self.template_id = settings.CREATOMATE_TEMPLATE_ID
         self.url = "https://api.creatomate.com/v2/renders"
         self.headers = {
-            "Authorization": f"Bearer {settings.CREATOMATE_API_KEY}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
 
@@ -38,24 +38,32 @@ class VideoRenderer:
                 "Video-1.fit": "cover",
                 "Video-1.crop": "smart"
             },
-            "metadata": json.dumps({
+            "metadata": {
                 "job_id": str(job_id),
-                "is_last": str(is_last)
-            })
+                "is_last": str(is_last).lower(),
+                "title": title
+            }
         }
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(self.url, json=payload, headers=self.headers)
                 
-                if response.status_code >= 400:
+                if response.status_code not in [200, 201, 202]:
                     logger.error(f"❌ Creatomate Error ({response.status_code}): {response.text}")
                     return None
                 
                 data = response.json()
-                render_id = data[0]['id']
+                # Безопасное получение ID
+                if isinstance(data, list) and len(data) > 0:
+                    render_id = data[0].get('id')
+                elif isinstance(data, dict):
+                    render_id = data.get('id')
+                else:
+                    render_id = "unknown"
+
                 logger.info(f"--- [🎥] Рендер запущен успешно. ID: {render_id}")
                 return render_id
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка Renderer: {e}")
+            logger.error(f"❌ Критическая ошибка Renderer: {str(e)}")
             return None
