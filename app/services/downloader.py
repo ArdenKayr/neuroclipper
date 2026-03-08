@@ -13,8 +13,8 @@ class VideoDownloader:
 
     def download_video(self, url: str, job_id: int):
         """
-        Скачивает видео и авторские субтитры.
-        Возвращает (video_path, subtitle_path)
+        Скачивает видео и ТОЛЬКО авторские субтитры (без автогенерации).
+        Возвращает (путь_к_видео, путь_к_субтитрам)
         """
         timestamp = int(time.time())
         filename = f"source_{job_id}_{timestamp}"
@@ -26,13 +26,12 @@ class VideoDownloader:
             'merge_output_format': 'mp4',
             'noplaylist': True,
             'quiet': True,
-            # Настройки субтитров
             'writesubtitles': True,
             'subtitleslangs': ['ru', 'en'],
-            'writeautomaticsub': False, # СТРОГО ИГНОРИРУЕМ мусорные авто-субтитры
+            'writeautomaticsub': False,  # Игнорируем мусорные авто-сабы YouTube
             'postprocessors': [{
                 'key': 'FFmpegSubtitlesConvertor',
-                'format': 'srt', # Конвертируем в удобный формат
+                'format': 'srt',
             }],
         }
 
@@ -41,16 +40,16 @@ class VideoDownloader:
                 info = ydl.extract_info(url, download=True)
                 video_path = ydl.prepare_filename(info)
                 
-                # Ищем файл субтитров (yt-dlp меняет расширение на .srt)
+                # Поиск файла субтитров
                 base_path = os.path.splitext(video_path)[0]
-                subtitle_path = f"{base_path}.ru.srt"
-                if not os.path.exists(subtitle_path):
-                    subtitle_path = f"{base_path}.en.srt"
-                if not os.path.exists(subtitle_path):
-                    subtitle_path = None
+                sub_path = f"{base_path}.ru.srt"
+                if not os.path.exists(sub_path):
+                    sub_path = f"{base_path}.en.srt"
+                
+                final_sub_path = sub_path if sub_path and os.path.exists(sub_path) else None
 
-            logger.info(f"--- [📥] Загрузка завершена. Видео: {os.path.basename(video_path)}, Сабы: {subtitle_path}")
-            return video_path, subtitle_path
+            logger.info(f"--- [📥] Загрузка завершена. Субтитры найдены: {final_sub_path is not None}")
+            return video_path, final_sub_path
         except Exception as e:
-            logger.error(f"❌ Ошибка скачивания: {e}")
+            logger.error(f"❌ Ошибка yt-dlp: {e}")
             return None, None

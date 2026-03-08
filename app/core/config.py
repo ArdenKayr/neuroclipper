@@ -16,15 +16,16 @@ class Settings(BaseSettings):
 
     # --- API KEYS ---
     OPENROUTER_API_KEY: str
-    OPENROUTER_MODEL: str = "anthropic/claude-3.5-sonnet" # Наш новый "мозг"
+    OPENROUTER_MODEL: str = "anthropic/claude-3.5-sonnet"
     OPENAI_API_KEY: str
     CREATOMATE_API_KEY: str
     CREATOMATE_TEMPLATE_ID: str
     
-    # --- VIZARD (OFF BY DEFAULT) ---
+    # --- VIZARD ---
     VIZARD_API_KEY: Optional[str] = None
-    ENABLE_VIZARD: bool = False # Флаг включения Vizard
-
+    ENABLE_VIZARD: bool = False
+    TWELVE_LABS_API_KEY: Optional[str] = None
+    
     # --- МОНИТОРИНГ И ОЧИСТКА ---
     SENTRY_DSN: Optional[str] = None
     CLEANUP_THRESHOLD_DAYS: int = 1
