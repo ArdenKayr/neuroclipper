@@ -19,8 +19,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Neuroclipper API Receiver")
-# Раздаем папку с видео, чтобы Creatomate мог их скачивать
-app.mount("/static", StaticFiles(directory="/root/neuroclipper/temp_videos"), name="static")
+
+# --- ИСПРАВЛЕНИЕ ПУТИ ---
+# В Docker мы работаем в /app. Используем папку assets/downloads для статики.
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets/downloads")
+os.makedirs(STATIC_DIR, exist_ok=True) # Создаем папку, если ее нет, чтобы избежать RuntimeError
+
+# Раздаем папку с видео
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 
 class WebhookData(BaseModel):
