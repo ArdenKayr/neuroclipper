@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: n_user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: neuroclipper
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+
+  bot:
+    build: .
+    command: python app/bot/main.py
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: .
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    env_file: .env
+    depends_on:
+      - redis
+      - db
+
+  api:
+    build: .
+    command: uvicorn api.server:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
