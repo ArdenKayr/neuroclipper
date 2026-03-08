@@ -5,7 +5,7 @@ from typing import Tuple, Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 class LinkValidator:
-    def __init__(self, max_duration_seconds: int = 3600): # Лимит поднят до часа
+    def __init__(self, max_duration_seconds: int = 10800): # Лимит поднят до часа
         self.max_duration = max_duration_seconds
         self.ydl_opts = {
             'quiet': True,
