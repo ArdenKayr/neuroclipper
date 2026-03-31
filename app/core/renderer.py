@@ -51,7 +51,7 @@ class VideoRenderer:
 
         # --- 1. ГЕНЕРАЦИЯ СУБТИТРОВ ---
         clip_audio = f"assets/temp_audio_{job_id}_{int(start_time)}.mp3"
-        srt_path = f"assets/temp_sub_{job_id}_{int(start_time)}.srt"
+        ass_path = f"assets/temp_sub_{job_id}_{int(start_time)}.ass"
         has_subs = False
         
         try:
@@ -63,13 +63,13 @@ class VideoRenderer:
             process_aud = await asyncio.create_subprocess_exec(*cmd_audio, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             await process_aud.communicate()
 
-            # Получаем пословный SRT через ИИ
+            # Получаем ИДЕАЛЬНЫЙ ASS файл через ИИ
             if os.path.exists(clip_audio):
-                logger.info("--- [📝] Отправляю аудио в Whisper для генерации динамичных субтитров...")
-                srt_text = await self.whisper.generate_karaoke_srt(clip_audio)
-                if srt_text and len(srt_text.strip()) > 0:
-                    with open(srt_path, "w", encoding="utf-8") as f:
-                        f.write(srt_text)
+                logger.info("--- [📝] Отправляю аудио в Whisper для генерации ASS субтитров...")
+                ass_text = await self.whisper.generate_karaoke_ass(clip_audio)
+                if ass_text and len(ass_text.strip()) > 0:
+                    with open(ass_path, "w", encoding="utf-8") as f:
+                        f.write(ass_text)
                     has_subs = True
                 os.remove(clip_audio)
 
@@ -112,12 +112,11 @@ class VideoRenderer:
             # --- 3. НАЛОЖЕНИЕ СУБТИТРОВ ---
             if has_subs:
                 logger.info("--- [✨] Вшиваем субтитры в видео...")
-                abs_srt_path = os.path.abspath(srt_path).replace('\\', '/')
-                abs_srt_path = abs_srt_path.replace(':', '\\:')
+                abs_ass_path = os.path.abspath(ass_path).replace('\\', '/')
+                abs_ass_path = abs_ass_path.replace(':', '\\:')
                 
-                # Настройки: Alignment=2 (Низ Центр), MarginV=150 (Отступ снизу), FontSize=20
-                style = "FontName=Arial,FontSize=20,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=150,Bold=1,Alignment=2"
-                filter_complex = f"{base_filter},subtitles={abs_srt_path}:force_style='{style}'[vout]"
+                # Просто указываем файл, так как ASS формат уже содержит 100% инструкций по стилю
+                filter_complex = f"{base_filter},subtitles='{abs_ass_path}'[vout]"
             else:
                 filter_complex = f"{base_filter}[vout]"
 
@@ -150,8 +149,8 @@ class VideoRenderer:
             logger.error(f"❌ Ошибка рендера: {e}")
             return None
         finally:
-            if os.path.exists(srt_path):
+            if os.path.exists(ass_path):
                 try:
-                    os.remove(srt_path)
+                    os.remove(ass_path)
                 except:
                     pass
