@@ -66,3 +66,21 @@ class WhisperService:
         finally:
             if os.path.exists(audio_path):
                 os.remove(audio_path)
+
+    async def transcribe_srt(self, audio_path: str) -> str:
+        """Отправляет микро-аудио в Whisper и получает готовый SRT файл с таймкодами"""
+        if not audio_path or not os.path.exists(audio_path):
+            return ""
+
+        try:
+            with open(audio_path, "rb") as f:
+                transcript = await self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f,
+                    response_format="srt"
+                )
+            # В режиме SRT API возвращает чистый текст
+            return str(transcript)
+        except Exception as e:
+            logger.error(f"❌ Ошибка Whisper API при генерации SRT: {e}")
+            return ""
