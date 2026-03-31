@@ -1,6 +1,7 @@
 import logging
 import json
 import httpx
+import re
 from core.config import settings
 from typing import List, Dict, Any
 
@@ -21,21 +22,24 @@ class SmartLLMService:
         if not self.api_key:
             logger.error("❌ OPENROUTER_API_KEY не задан!")
             return []
+            
+        if not transcript or len(transcript.strip()) < 50:
+            logger.error("❌ Текст слишком короткий или пустой! LLM нечего анализировать.")
+            return []
 
         prompt = f"""
 You are an expert TikTok/Shorts video editor. Analyze this video transcript.
-The transcript includes timestamps in seconds [start - end] or in SRT format.
+The transcript includes timestamps in seconds [start - end].
 
 Your task is to find the 3 most viral, engaging, and standalone moments suitable for short-form video.
 RULES:
 1. Each clip MUST be between 30 and 60 seconds long.
-2. A good clip has a hook (interesting start), builds tension, and has a satisfying conclusion.
-3. The start and end timestamps MUST match exactly with the timestamps provided in the text. Do not invent or guess times!
-4. Return ONLY a raw JSON array. No markdown, no text before or after.
+2. The start and end timestamps MUST match exactly with the timestamps provided in the text.
+3. Return ONLY a raw JSON array. No markdown, no intro text.
 
 FORMAT:
 [
-  {{"start": 12.5, "end": 45.0, "title": "Catchy Hook Title", "reason": "Why this goes viral"}}
+  {{"start": 12.5, "end": 45.0, "title": "Catchy Title", "reason": "Why"}}
 ]
 
 TRANSCRIPT:
@@ -57,16 +61,23 @@ TRANSCRIPT:
                 data = response.json()
                 content = data['choices'][0]['message']['content']
                 
-                # Очистка JSON
-                clean_json = content.replace("```json", "").replace("```", "").strip()
-                start_idx = clean_json.find("[")
-                end_idx = clean_json.rfind("]") + 1
+                # 🔥 Логируем сырой ответ, чтобы понять, что не так
+                logger.info(f"--- [🤖] Ответ от нейросети: {content[:300]}...")
                 
-                if start_idx != -1 and end_idx != -1:
-                    clean_json = clean_json[start_idx:end_idx]
-                    return json.loads(clean_json)[:5]
-                
-                return []
+                # Пуленепробиваемый поиск массива JSON в тексте
+                match = re.search(r'\[.*\]', content, re.DOTALL)
+                if match:
+                    clean_json = match.group(0)
+                    try:
+                        parsed = json.loads(clean_json)
+                        return parsed[:3]
+                    except json.JSONDecodeError as je:
+                        logger.error(f"❌ Ошибка парсинга JSON от LLM: {je}\nСырой кусок: {clean_json}")
+                        return []
+                else:
+                    logger.error("❌ LLM не вернула массив [...] вообще.")
+                    return []
+                    
         except Exception as e:
-            logger.error(f"❌ Ошибка LLM: {str(e)}")
+            logger.error(f"❌ Ошибка LLM-сервиса: {str(e)}")
             return []
