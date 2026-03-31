@@ -63,10 +63,10 @@ class VideoRenderer:
             process_aud = await asyncio.create_subprocess_exec(*cmd_audio, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             await process_aud.communicate()
 
-            # Получаем SRT через ИИ
+            # Получаем пословный SRT через ИИ
             if os.path.exists(clip_audio):
-                logger.info("--- [📝] Отправляю аудио в Whisper для генерации субтитров...")
-                srt_text = await self.whisper.transcribe_srt(clip_audio)
+                logger.info("--- [📝] Отправляю аудио в Whisper для генерации динамичных субтитров...")
+                srt_text = await self.whisper.generate_karaoke_srt(clip_audio)
                 if srt_text and len(srt_text.strip()) > 0:
                     with open(srt_path, "w", encoding="utf-8") as f:
                         f.write(srt_text)
@@ -113,10 +113,10 @@ class VideoRenderer:
             if has_subs:
                 logger.info("--- [✨] Вшиваем субтитры в видео...")
                 abs_srt_path = os.path.abspath(srt_path).replace('\\', '/')
-                abs_srt_path = abs_srt_path.replace(':', '\\:') # Защита для Windows/Docker
+                abs_srt_path = abs_srt_path.replace(':', '\\:')
                 
-                # Стиль: Arial 24px, Желтый цвет (&H00FFFF), Черная обводка, Отступ снизу
-                style = "FontName=Arial,FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=100,Bold=1"
+                # Настройки: Alignment=2 (Низ Центр), MarginV=150 (Отступ снизу), FontSize=20
+                style = "FontName=Arial,FontSize=20,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=150,Bold=1,Alignment=2"
                 filter_complex = f"{base_filter},subtitles={abs_srt_path}:force_style='{style}'[vout]"
             else:
                 filter_complex = f"{base_filter}[vout]"
@@ -150,7 +150,6 @@ class VideoRenderer:
             logger.error(f"❌ Ошибка рендера: {e}")
             return None
         finally:
-            # Убираем за собой временный SRT файл
             if os.path.exists(srt_path):
                 try:
                     os.remove(srt_path)
