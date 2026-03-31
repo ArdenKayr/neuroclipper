@@ -33,7 +33,7 @@ async def handle_link(message: types.Message):
     # 1. Визуальный статус
     status_msg = await message.answer("🔍 Проверяю ссылку...")
 
-    # 2. Валидация (Шаг 2.1)
+    # 2. Валидация
     is_valid, error, metadata = await validator.validate_video(url)
     
     if not is_valid:
@@ -54,7 +54,7 @@ async def handle_link(message: types.Message):
         session.add(new_job)
         await session.flush() # Получаем ID задачи
         
-        # Списываем баланс (логика будет расширена в 4.1)
+        # Списываем баланс
         user.balance_clips -= 1
         await session.commit()
         
@@ -62,5 +62,5 @@ async def handle_link(message: types.Message):
 
     await status_msg.edit_text(f"✅ Видео «{metadata['title']}» принято!\n⏳ Длительность: {metadata['duration'] // 60} мин.\n\nНачинаю обработку... [⏳ Скачивание...]")
     
-    # 4. Отправка в Celery (Воркер подхватит задачу)
-    process_video_job.delay(job_id, preset_style="dynamic")
+    # 4. Отправка в Celery (ЗДЕСЬ БЫЛА ОШИБКА, ТЕПЕРЬ ИСПРАВЛЕНО)
+    process_video_job.delay(job_id)
