@@ -32,12 +32,13 @@ You are an expert TikTok/Shorts video editor. Analyze this video transcript.
 The transcript includes timestamps in seconds [start - end].
 
 Your task is to find the 3 most viral, engaging, and standalone moments suitable for short-form video.
-RULES:
-1. Each clip MUST be between 30 and 60 seconds long.
-2. CONTEXT IS KING: The clip MUST start at the very beginning of a thought, question, or topic. Do not start mid-sentence or mid-context. The viewer must understand what is happening without seeing the full video.
-3. The start and end timestamps MUST match exactly with the timestamps provided in the text. Do not invent or guess times!
-4. Return ONLY a raw JSON array. No markdown, no intro text.
-5. You MUST write the "title" and "reason" values IN RUSSIAN, regardless of the video's original language.
+CRITICAL RULES FOR TIMESTAMPS (PAY CLOSE ATTENTION):
+1. SENTENCE BOUNDARIES: The clip MUST start at the very beginning of a sentence (look for capital letters or start of a new thought) and end at the very end of a sentence (look for periods, question marks, or logical conclusions).
+2. MULTIPLE BLOCKS: Sentences almost always span across multiple timestamp blocks. You MUST combine them! If a sentence starts at [10.0 - 12.0] and ends at [12.0 - 15.0], your clip must be "start": 10.0, "end": 15.0.
+3. NO MID-SENTENCE CUTS: NEVER start or end a clip mid-sentence. The viewer must hear the complete thought from the first word to the last.
+4. Each clip MUST be between 30 and 60 seconds long.
+5. Return ONLY a raw JSON array. No markdown, no intro text.
+6. You MUST write the "title" and "reason" values IN RUSSIAN, regardless of the video's original language.
 
 FORMAT:
 [
