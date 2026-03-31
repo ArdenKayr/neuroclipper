@@ -21,19 +21,23 @@ class VideoRenderer:
         """Режет видео и делает кроп 9:16 бесплатно"""
         output_filename = f"clip_{job_id}_{int(start_time)}.mp4"
         output_path = os.path.join(self.output_dir, output_filename)
-        duration = float(end_time) - float(start_time)
+        
+        # Делаем мягкие отступы (padding), чтобы не резать слова
+        safe_start = max(0.0, float(start_time) - 0.4)
+        safe_end = float(end_time) + 0.6
 
         # Фильтр: кроп центра под 9:16 и масштаб в 720p
         vf_chain = "crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280"
 
         command = [
             "ffmpeg", "-y",
-            "-ss", str(start_time),
-            "-t", str(duration),
+            "-ss", str(safe_start),
+            "-to", str(safe_end),
             "-i", local_video_path,
             "-vf", vf_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
+            "-async", "1",  # Флаг для жесткой синхронизации аудио
             output_path
         ]
 

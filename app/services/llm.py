@@ -34,12 +34,14 @@ The transcript includes timestamps in seconds [start - end].
 Your task is to find the 3 most viral, engaging, and standalone moments suitable for short-form video.
 RULES:
 1. Each clip MUST be between 30 and 60 seconds long.
-2. The start and end timestamps MUST match exactly with the timestamps provided in the text.
-3. Return ONLY a raw JSON array. No markdown, no intro text.
+2. CONTEXT IS KING: The clip MUST start at the very beginning of a thought, question, or topic. Do not start mid-sentence or mid-context. The viewer must understand what is happening without seeing the full video.
+3. The start and end timestamps MUST match exactly with the timestamps provided in the text. Do not invent or guess times!
+4. Return ONLY a raw JSON array. No markdown, no intro text.
+5. You MUST write the "title" and "reason" values IN RUSSIAN, regardless of the video's original language.
 
 FORMAT:
 [
-  {{"start": 12.5, "end": 45.0, "title": "Catchy Title", "reason": "Why"}}
+  {{"start": 12.5, "end": 45.0, "title": "Название на русском", "reason": "Почему этот момент станет виральным"}}
 ]
 
 TRANSCRIPT:
@@ -61,10 +63,8 @@ TRANSCRIPT:
                 data = response.json()
                 content = data['choices'][0]['message']['content']
                 
-                # 🔥 Логируем сырой ответ, чтобы понять, что не так
                 logger.info(f"--- [🤖] Ответ от нейросети: {content[:300]}...")
                 
-                # Пуленепробиваемый поиск массива JSON в тексте
                 match = re.search(r'\[.*\]', content, re.DOTALL)
                 if match:
                     clean_json = match.group(0)
