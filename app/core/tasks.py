@@ -3,7 +3,7 @@ import asyncio
 import os
 from celery_app import app as celery_app
 from sqlalchemy import select
-from models.database import AsyncSessionLocal
+from models.database import AsyncSessionLocal, engine  # Добавили импорт engine
 from models.db_models import Job, User
 from core.analyzer import AIAnalyzer
 from core.renderer import VideoRenderer
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=settings.BOT_TOKEN)
 
 async def _async_process_job(job_id: int):
-    async with AsyncSessionLocal() as session:
-        try:
+    try:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Job, User).join(User, Job.user_id == User.id).where(Job.id == job_id)
             )
@@ -25,7 +25,6 @@ async def _async_process_job(job_id: int):
             job, user = data
 
             analyzer = AIAnalyzer()
-            # Находим моменты (уже работает через GPT-4o)
             highlights, local_raw_path, _ = await analyzer.find_visual_highlights(job.input_url, job.id)
 
             if not highlights or not local_raw_path:
@@ -55,8 +54,13 @@ async def _async_process_job(job_id: int):
 
             job.status = 'completed'
             await session.commit()
-        except Exception as e:
-            logger.error(f"❌ Ошибка задачи {job_id}: {e}")
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка задачи {job_id}: {e}")
+    finally:
+        # 🔥 МАГИЧЕСКАЯ СТРОКА: Сбрасываем пул соединений БД
+        # Это гарантирует, что следующее видео не упадет с ошибкой "Event loop is closed"
+        await engine.dispose()
 
 @celery_app.task(name="process_video_job")
 def process_video_job(job_id):
