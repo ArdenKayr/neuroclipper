@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class WhisperService:
     def __init__(self):
-        # Настраиваем клиент с учетом возможного прокси
+        # 🔥 Настраиваем клиент с учетом возможного прокси
         client_kwargs = {"api_key": settings.OPENAI_API_KEY}
         if settings.OPENAI_BASE_URL:
             client_kwargs["base_url"] = settings.OPENAI_BASE_URL
@@ -45,7 +45,7 @@ class WhisperService:
             formatted_text = ""
             try:
                 t_data = transcript.model_dump() if hasattr(transcript, "model_dump") else (transcript if isinstance(transcript, dict) else vars(transcript))
-                segments = t_data.get('segments', [])
+                segments = t_data.get('segments') or []
                 
                 if segments:
                     for seg in segments:
@@ -82,21 +82,23 @@ class WhisperService:
                 )
             
             t_data = transcript.model_dump() if hasattr(transcript, "model_dump") else (transcript if isinstance(transcript, dict) else vars(transcript))
-            words = t_data.get('words', [])
+            
+            # ИСПРАВЛЕНИЕ: Жестко защищаемся от того, что прокси может вернуть null
+            words = t_data.get('words') or []
 
             # Если API не вернуло слова, делаем фоллбэк на сегменты
             if not words:
                 logger.warning("⚠️ Whisper не вернул 'words', пробую разбить 'segments'...")
-                segments = t_data.get('segments', [])
+                segments = t_data.get('segments') or []
                 for s in segments:
                     w_list = s.get('text', '').split()
-                    duration = s['end'] - s['start']
+                    duration = s.get('end', 0) - s.get('start', 0)
                     step = duration / max(1, len(w_list))
                     for i, w in enumerate(w_list):
                         words.append({
                             "word": w,
-                            "start": s['start'] + i * step,
-                            "end": s['start'] + (i + 1) * step
+                            "start": s.get('start', 0) + i * step,
+                            "end": s.get('start', 0) + (i + 1) * step
                         })
 
             if not words:
