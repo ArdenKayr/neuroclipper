@@ -5,7 +5,8 @@ from typing import Tuple, Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 class LinkValidator:
-    def __init__(self, max_duration_seconds: int = 10800): # Лимит поднят до часа
+    # Ограничиваем до 30 минут (1800 сек), чтобы аудио не превышало лимит 25 МБ для OpenAI
+    def __init__(self, max_duration_seconds: int = 1800): 
         self.max_duration = max_duration_seconds
         self.ydl_opts = {
             'quiet': True,
@@ -14,13 +15,8 @@ class LinkValidator:
         }
 
     async def validate_video(self, url: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
-        """
-        Проверяет ссылку на видео.
-        Возвращает: (Is_Valid, Error_Message, Metadata)
-        """
         try:
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                # Извлекаем информацию без скачивания самого файла
                 info = ydl.extract_info(url, download=False)
                 
                 if not info:
@@ -32,17 +28,13 @@ class LinkValidator:
 
                 logger.info(f"🔍 Валидация: {title} ({duration} сек.)")
 
-                # 1. Проверка на Live-статус (стримы, которые идут ПРЯМО СЕЙЧАС)
-                # Мы не можем резать видео, которое еще не закончилось.
                 if is_live:
                     return False, "Стримы (Live) в прямом эфире не поддерживаются. Дождитесь окончания трансляции.", None
 
-                # 2. Проверка на длительность (теперь до 3 часов)
                 if duration > self.max_duration:
-                    hours = self.max_duration // 3600
-                    return False, f"Видео слишком длинное. Максимальная длительность — {hours} часа.", None
+                    mins = self.max_duration // 60
+                    return False, f"Видео слишком длинное. Для теста максимальная длительность — {mins} минут.", None
 
-                # 3. Проверка на доступность форматов
                 if not info.get('formats'):
                     return False, "Видео недоступно, защищено или удалено.", None
 

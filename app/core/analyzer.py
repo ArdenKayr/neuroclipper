@@ -48,7 +48,12 @@ class AIAnalyzer:
                 res = await self.whisper.transcribe(audio_file)
                 transcript_text = res.text if res else ""
 
-            s3_url = await s3_task
+            # Безопасное ожидание S3, чтобы ошибка облака не обрушила весь процесс
+            try:
+                s3_url = await s3_task
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка загрузки в S3, продолжаем локально: {e}")
+                s3_url = ""
 
             # 4. Анализ смыслов
             highlights = []
