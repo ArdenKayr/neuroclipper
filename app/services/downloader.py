@@ -29,6 +29,7 @@ class VideoDownloader:
             'writesubtitles': True,
             'subtitleslangs': ['ru', 'en'],
             'writeautomaticsub': False,  # Игнорируем мусорные авто-сабы YouTube
+            'source_address': '0.0.0.0', # Жестко форсируем IPv4, чтобы избежать ошибки 101
             'postprocessors': [{
                 'key': 'FFmpegSubtitlesConvertor',
                 'format': 'srt',
