@@ -18,13 +18,14 @@ class VideoRenderer:
         title: str, 
         job_id: int
     ) -> str:
-        """Режет видео и делает кроп 9:16 бесплатно"""
         output_filename = f"clip_{job_id}_{int(start_time)}.mp4"
         output_path = os.path.join(self.output_dir, output_filename)
         
-        # Делаем мягкие отступы (padding), чтобы не резать слова
-        safe_start = max(0.0, float(start_time) - 0.4)
-        safe_end = float(end_time) + 0.6
+        # Увеличиваем "подушку безопасности" (padding)
+        # Берем на 0.8 сек раньше и на 1.5 сек позже
+        safe_start = max(0.0, float(start_time) - 0.8)
+        safe_end = float(end_time) + 1.5
+        duration = safe_end - safe_start
 
         # Фильтр: кроп центра под 9:16 и масштаб в 720p
         vf_chain = "crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280"
@@ -32,17 +33,17 @@ class VideoRenderer:
         command = [
             "ffmpeg", "-y",
             "-ss", str(safe_start),
-            "-to", str(safe_end),
             "-i", local_video_path,
+            "-t", str(duration),
             "-vf", vf_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
-            "-async", "1",  # Флаг для жесткой синхронизации аудио
+            "-af", "aresample=async=1",  # Современный фикс рассинхрона аудио
             output_path
         ]
 
         try:
-            logger.info(f"--- [⚙️] FFmpeg: Рендер {output_filename}")
+            logger.info(f"--- [⚙️] FFmpeg: Рендер {output_filename} (с {safe_start} по {safe_end} сек)")
             process = await asyncio.create_subprocess_exec(
                 *command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
