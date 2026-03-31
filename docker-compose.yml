@@ -28,6 +28,9 @@ services:
     restart: always
     command: python app/bot/main.py
     env_file: .env
+    volumes:
+      - ./assets:/app/assets
+      - ./logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -37,9 +40,11 @@ services:
   worker:
     build: .
     restart: always
-    # Concurrency 2 ограничена для экономии RAM, можно увеличить при росте мощностей
     command: celery -A core.tasks worker --loglevel=info --concurrency=2
     env_file: .env
+    volumes:
+      - ./assets:/app/assets
+      - ./logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -53,19 +58,11 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
+    volumes:
+      - ./assets:/app/assets
     depends_on:
       db:
         condition: service_healthy
-
-  flower:
-    image: mher/flower:latest
-    restart: always
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-    ports:
-      - "5555:5555"
-    depends_on:
-      - redis
 
 volumes:
   postgres_data:

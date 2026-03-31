@@ -1,67 +1,63 @@
 import logging
 import asyncio
-import sentry_sdk
+import os
 from celery_app import app as celery_app
 from sqlalchemy import select
 from models.database import AsyncSessionLocal
-from models.db_models import Job
+from models.db_models import Job, User
 from core.analyzer import AIAnalyzer
 from core.renderer import VideoRenderer
+from aiogram import Bot
+from aiogram.types import FSInputFile
 from core.config import settings
-from services.cleanup import CleanupService
-
-if settings.SENTRY_DSN:
-    sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=1.0)
 
 logger = logging.getLogger(__name__)
+bot = Bot(token=settings.BOT_TOKEN)
 
-async def _async_process_job(job_id: int, preset_style: str):
+async def _async_process_job(job_id: int):
     async with AsyncSessionLocal() as session:
         try:
-            result = await session.execute(select(Job).where(Job.id == job_id))
-            job = result.scalar_one_or_none()
-            if not job: return "Job not found"
-
-            job.status = 'processing'
-            await session.commit()
+            result = await session.execute(
+                select(Job, User).join(User, Job.user_id == User.id).where(Job.id == job_id)
+            )
+            data = result.first()
+            if not data: return
+            job, user = data
 
             analyzer = AIAnalyzer()
+            # Находим моменты (уже работает через GPT-4o)
+            highlights, local_raw_path, _ = await analyzer.find_visual_highlights(job.input_url, job.id)
+
+            if not highlights or not local_raw_path:
+                raise Exception("Анализ не удался")
+
             renderer = VideoRenderer()
+            for i, clip in enumerate(highlights[:3]): # Берем 3 для теста
+                final_path = await renderer.create_short(
+                    local_video_path=local_raw_path,
+                    start_time=clip['start'],
+                    end_time=clip['end'],
+                    title=clip.get('title', 'Clip'),
+                    job_id=job.id
+                )
 
-            # ШАГ 1: Анализ (Whisper/Сабы + Claude)
-            highlights, local_file, s3_url = await analyzer.find_visual_highlights(job.input_url, job.id)
-
-            if highlights and s3_url:
-                total = len(highlights)
-                logger.info(f"🚀 Запускаю рендер {total} клипов...")
-                
-                for i, clip in enumerate(highlights):
-                    await renderer.create_short(
-                        s3_url=s3_url,
-                        start_time=clip['start'],
-                        end_time=clip['end'],
-                        title=clip.get('title', 'Moment'),
-                        job_id=job.id,
-                        local_filename=local_file,
-                        style=preset_style,
-                        is_last=(i == total - 1)
+                if final_path and os.path.exists(final_path):
+                    video_file = FSInputFile(final_path)
+                    await bot.send_video(
+                        chat_id=user.tg_id, 
+                        video=video_file, 
+                        caption=f"🎬 **Клип №{i+1}**\n📌 {clip.get('title')}"
                     )
-                return f"OK: {total} clips in progress"
+                    os.remove(final_path)
 
-            job.status = 'error'
-            job.error_message = "Analysis failed"
+            if os.path.exists(local_raw_path):
+                os.remove(local_raw_path)
+
+            job.status = 'completed'
             await session.commit()
-            return "Failed"
-
         except Exception as e:
-            logger.error(f"❌ Ошибка в задаче {job_id}: {e}")
-            return str(e)
+            logger.error(f"❌ Ошибка задачи {job_id}: {e}")
 
-@celery_app.task(bind=True, name="process_video_job", max_retries=1)
-def process_video_job(self, job_id, preset_style="dynamic"):
-    return asyncio.run(_async_process_job(job_id, preset_style))
-
-@celery_app.task(name="cleanup_old_files")
-def cleanup_old_files():
-    cleaner = CleanupService()
-    return cleaner.run_full_cleanup()
+@celery_app.task(name="process_video_job")
+def process_video_job(job_id):
+    return asyncio.run(_async_process_job(job_id))

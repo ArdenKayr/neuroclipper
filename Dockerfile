@@ -1,27 +1,31 @@
 FROM python:3.10-slim
 
-# Установка системных зависимостей
+# Системные зависимости
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
     build-essential \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Создаем пользователя n_user
+RUN useradd -m -s /bin/bash n_user
 
 WORKDIR /app
 
-# Копируем и устанавливаем зависимости
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Копируем код проекта
 COPY . .
 
-# Создаем папки для логов и загрузок заранее
-RUN mkdir -p assets/downloads logs
+# Создаем папки и даем права
+RUN mkdir -p assets/downloads assets/results logs && \
+    chown -R n_user:n_user /app
 
-# Указываем PYTHONPATH, чтобы модули импортировались корректно
 ENV PYTHONPATH=/app/app
 ENV PYTHONUNBUFFERED=1
 
-# По умолчанию запускаем бота (будет переопределено в docker-compose)
+USER n_user
+
 CMD ["python", "app/bot/main.py"]
