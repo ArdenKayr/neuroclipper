@@ -104,13 +104,6 @@ class VideoRenderer:
                 
                 filter_complex = f"[0:v]crop={crop_w}:{vid_h}:{x}:0,scale=720:1280[vout]"
 
-        # --- СТУДИЙНЫЙ ЗВУК (Audio Enhance) ---
-        # aresample - синхронизация
-        # afftdn - удаление фонового шума
-        # acompressor - выравнивание громкости
-        # bass - добавление бархатности голосу
-        audio_filters = "aresample=async=1,afftdn=nf=-25,acompressor=ratio=3:makeup=2,bass=g=5:f=110"
-
         command = [
             "ffmpeg", "-y",
             "-ss", str(safe_start),
@@ -119,13 +112,12 @@ class VideoRenderer:
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "0:a",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-af", audio_filters,
             "-c:a", "aac", "-b:a", "128k",
             output_path
         ]
 
         try:
-            logger.info(f"--- [⚙️] FFmpeg: Рендер {output_filename} (со смарт-кропом и аудио-улучшением)")
+            logger.info(f"--- [⚙️] FFmpeg: Рендер {output_filename} (со смарт-кропом, звук оригинальный)")
             process = await asyncio.create_subprocess_exec(
                 *command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
