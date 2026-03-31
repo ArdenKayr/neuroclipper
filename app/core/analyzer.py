@@ -45,8 +45,8 @@ class AIAnalyzer:
             else:
                 logger.info("--- [🎙️] Авторских сабов нет. Запуск Whisper...")
                 audio_file = await loop.run_in_executor(None, self.whisper.extract_audio, local_file)
-                res = await self.whisper.transcribe(audio_file)
-                transcript_text = res.text if res else ""
+                # Получаем готовый текст с таймкодами напрямую
+                transcript_text = await self.whisper.transcribe(audio_file)
 
             # Безопасное ожидание S3, чтобы ошибка облака не обрушила весь процесс
             try:
@@ -68,7 +68,7 @@ class AIAnalyzer:
             
             if not highlights:
                 logger.warning("⚠️ Анализ не дал результатов. Применяю fallback.")
-                highlights = [{"start": 0, "end": 60, "title": "Демо-клип", "reason": "fallback"}]
+                highlights = [{"start": 0.0, "end": 30.0, "title": "Демо-клип", "reason": "fallback"}]
 
             return highlights, local_file, s3_url
 

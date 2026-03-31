@@ -23,23 +23,30 @@ class SmartLLMService:
             return []
 
         prompt = f"""
-Analyze this transcript and find 5 viral highlights for Shorts (30-60 sec each).
-Return ONLY a raw JSON array.
+You are an expert TikTok/Shorts video editor. Analyze this video transcript.
+The transcript includes timestamps in seconds [start - end] or in SRT format.
+
+Your task is to find the 3 most viral, engaging, and standalone moments suitable for short-form video.
+RULES:
+1. Each clip MUST be between 30 and 60 seconds long.
+2. A good clip has a hook (interesting start), builds tension, and has a satisfying conclusion.
+3. The start and end timestamps MUST match exactly with the timestamps provided in the text. Do not invent or guess times!
+4. Return ONLY a raw JSON array. No markdown, no text before or after.
+
+FORMAT:
+[
+  {{"start": 12.5, "end": 45.0, "title": "Catchy Hook Title", "reason": "Why this goes viral"}}
+]
 
 TRANSCRIPT:
 {transcript[:30000]}
-
-JSON FORMAT:
-[
-  {{"start": 10.0, "end": 45.0, "title": "Moment Title", "reason": "Why"}}
-]
 """
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 payload = {
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3
+                    "temperature": 0.2
                 }
                 response = await client.post(self.url, json=payload, headers=self.headers)
                 
@@ -50,7 +57,7 @@ JSON FORMAT:
                 data = response.json()
                 content = data['choices'][0]['message']['content']
                 
-                # Очистка JSON от возможных артефактов
+                # Очистка JSON
                 clean_json = content.replace("```json", "").replace("```", "").strip()
                 start_idx = clean_json.find("[")
                 end_idx = clean_json.rfind("]") + 1
@@ -59,7 +66,6 @@ JSON FORMAT:
                     clean_json = clean_json[start_idx:end_idx]
                     return json.loads(clean_json)[:5]
                 
-                logger.warning("⚠️ LLM не вернула корректный массив JSON")
                 return []
         except Exception as e:
             logger.error(f"❌ Ошибка LLM: {str(e)}")
