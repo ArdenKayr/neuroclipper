@@ -2,8 +2,23 @@ import yt_dlp
 import os
 import time
 import logging
+import socket
 
 logger = logging.getLogger(__name__)
+
+# --- ЯДЕРНЫЙ ФИКС СЕТИ ДЛЯ DOCKER ---
+# Полностью отключаем IPv6 на уровне Python. 
+# yt-dlp больше не попытается использовать сломанные маршруты Google.
+old_getaddrinfo = socket.getaddrinfo
+
+def ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if family == socket.AF_UNSPEC:
+        family = socket.AF_INET
+    responses = old_getaddrinfo(host, port, family, type, proto, flags)
+    return [res for res in responses if res[0] == socket.AF_INET]
+
+socket.getaddrinfo = ipv4_getaddrinfo
+# ------------------------------------
 
 class VideoDownloader:
     def __init__(self, download_path="assets/downloads"):
@@ -28,8 +43,7 @@ class VideoDownloader:
             'quiet': True,
             'writesubtitles': True,
             'subtitleslangs': ['ru', 'en'],
-            'writeautomaticsub': False,  # Игнорируем мусорные авто-сабы YouTube
-            'source_address': '0.0.0.0', # Жестко форсируем IPv4, чтобы избежать ошибки 101
+            'writeautomaticsub': False,  # Игнорируем мусорные авто-сабы
             'postprocessors': [{
                 'key': 'FFmpegSubtitlesConvertor',
                 'format': 'srt',
