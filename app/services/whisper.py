@@ -11,10 +11,9 @@ class WhisperService:
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     def extract_audio(self, video_path: str) -> str:
-        """Конвертирует видео в легкий MP3 для транскрибации"""
         audio_path = video_path.replace(".mp4", ".mp3")
         try:
-            # Обрезаем аудио до первых 30 минут, чтобы точно не словить ошибку 400 от OpenAI (превышение веса)
+            # Обрезаем аудио до 30 минут, чтобы избежать ошибки 400 (превышение веса файла)
             command = [
                 "ffmpeg", "-y", "-i", video_path, "-t", "1800",
                 "-vn", "-acodec", "libmp3lame", "-ac", "1", "-ab", "32k", "-ar", "16000",
@@ -27,7 +26,6 @@ class WhisperService:
             return None
 
     async def transcribe(self, audio_path: str) -> str:
-        """Отправляет аудио в Whisper API и возвращает текст с ТАЙМКОДАМИ"""
         if not audio_path or not os.path.exists(audio_path):
             return ""
 
@@ -40,16 +38,23 @@ class WhisperService:
                     timestamp_granularities=["segment"]
                 )
             
-            # Собираем текст с таймкодами: [12.0 - 15.5] Текст
             formatted_text = ""
-            if hasattr(transcript, 'segments') and transcript.segments:
-                for seg in transcript.segments:
-                    start = seg.start if hasattr(seg, 'start') else seg.get('start', 0)
-                    end = seg.end if hasattr(seg, 'end') else seg.get('end', 0)
-                    text = seg.text if hasattr(seg, 'text') else seg.get('text', '')
-                    formatted_text += f"[{start:.1f} - {end:.1f}] {text.strip()}\n"
-            else:
-                formatted_text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+            try:
+                # Универсальный способ вытащить данные (Pydantic / Dict)
+                t_data = transcript.model_dump() if hasattr(transcript, "model_dump") else (transcript if isinstance(transcript, dict) else vars(transcript))
+                segments = t_data.get('segments', [])
+                
+                if segments:
+                    for seg in segments:
+                        start = seg.get('start', 0)
+                        end = seg.get('end', 0)
+                        text = seg.get('text', '')
+                        formatted_text += f"[{float(start):.1f} - {float(end):.1f}] {text.strip()}\n"
+                else:
+                    formatted_text = t_data.get('text', str(transcript))
+            except Exception as parse_e:
+                logger.error(f"⚠️ Ошибка парсинга сегментов Whisper: {parse_e}")
+                formatted_text = str(transcript)
                 
             return formatted_text
         except Exception as e:
