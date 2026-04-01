@@ -68,7 +68,7 @@ class WhisperService:
                 os.remove(audio_path)
 
     async def generate_karaoke_ass(self, audio_path: str) -> str:
-        """Получает таймкоды ПОСЛОВНО и генерирует идеальный ASS файл для TikTok"""
+        """Получает таймкоды ПОСЛОВНО и генерирует идеальный ASS файл с умной группировкой (Smart Pacing)"""
         if not audio_path or not os.path.exists(audio_path):
             return ""
 
@@ -83,7 +83,7 @@ class WhisperService:
             
             t_data = transcript.model_dump() if hasattr(transcript, "model_dump") else (transcript if isinstance(transcript, dict) else vars(transcript))
             
-            # ИСПРАВЛЕНИЕ: Жестко защищаемся от того, что прокси может вернуть null
+            # Жестко защищаемся от того, что прокси может вернуть null
             words = t_data.get('words') or []
 
             # Если API не вернуло слова, делаем фоллбэк на сегменты
@@ -125,13 +125,37 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if cs >= 100: cs = 99
                 return f"{h}:{m:02}:{s:02}.{cs:02}"
 
-            chunk_size = 2  # МАКСИМУМ 2 СЛОВА НА ЭКРАН!
-            for i in range(0, len(words), chunk_size):
-                chunk = words[i:i+chunk_size]
+            # --- УМНАЯ ГРУППИРОВКА СЛОВ ---
+            MAX_WORDS = 3
+            MAX_GAP = 0.4  # Максимальная тишина между словами (0.4 сек)
+
+            chunks = []
+            current_chunk = []
+
+            for word in words:
+                if not current_chunk:
+                    current_chunk.append(word)
+                    continue
+
+                prev_word = current_chunk[-1]
+                gap = word['start'] - prev_word['end']
+
+                # Завершаем блок, если: достигли лимита в 3 слова ИЛИ спикер сделал паузу (вздохнул/задумался)
+                if len(current_chunk) >= MAX_WORDS or gap > MAX_GAP:
+                    chunks.append(current_chunk)
+                    current_chunk = [word]
+                else:
+                    current_chunk.append(word)
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # --- ФОРМИРОВАНИЕ ТИТРОВ ---
+            for chunk in chunks:
                 start_time = chunk[0]['start']
                 end_time = chunk[-1]['end']
                 
-                # Очищаем от лишних пробелов и делаем текст ЗАГЛАВНЫМ
+                # Собираем текст, убираем лишние пробелы и делаем текст КАПСОМ
                 text = " ".join([w['word'] for w in chunk]).strip().upper()
                 
                 ass_content += f"Dialogue: 0,{format_time_ass(start_time)},{format_time_ass(end_time)},Default,,0,0,0,,{text}\n"
