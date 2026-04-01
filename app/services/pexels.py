@@ -15,18 +15,15 @@ class PexelsService:
             return None
             
         try:
-            # Мощный набор заголовков: Ключ + Имитация Chrome + Referer
-            headers = {
+            # --- ЭТАП 1: ПОИСК (Только для API Pexels, используем ключ) ---
+            api_headers = {
                 "Authorization": self.api_key,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "Referer": "https://www.pexels.com/",
-                "Accept": "*/*"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             }
             
-            # follow_redirects=True обязательно, так как Pexels часто перенаправляет ссылки
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&size=medium&per_page=3"
-                res = await client.get(url, headers=headers)
+                res = await client.get(url, headers=api_headers)
                 res.raise_for_status()
                 data = res.json()
                 
@@ -40,13 +37,21 @@ class PexelsService:
                     
                 video_files.sort(key=lambda x: x.get('height', 0), reverse=True)
                 best_file = next((f for f in video_files if f.get("height", 0) <= 1920), video_files[0])
-                
                 download_url = best_file["link"]
                 logger.info(f"--- [🎥] Найдено видео: {download_url}")
-                logger.info(f"--- [🎥] Скачиваю B-Roll '{query}' с пробиванием защиты...")
-                
-                # Скачиваем видео, отправляя тот же набор "честных" заголовков
-                video_res = await client.get(download_url, headers=headers)
+
+            # --- ЭТАП 2: СКАЧИВАНИЕ (Для Amazon S3. СТРОГО БЕЗ КЛЮЧА!) ---
+            # Оставляем только User-Agent и Referer, чтобы казаться браузером
+            download_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer": "https://www.pexels.com/"
+            }
+            
+            logger.info(f"--- [🎥] Скачиваю файл (чистый клиент без Authorization)...")
+            
+            # Создаем новый клиент, чтобы точно не "прилипли" старые заголовки
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as dl_client:
+                video_res = await dl_client.get(download_url, headers=download_headers)
                 video_res.raise_for_status()
                 
                 with open(output_path, "wb") as f:

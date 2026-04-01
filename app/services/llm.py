@@ -90,3 +90,20 @@ TRANSCRIPT:
         except Exception as e:
             logger.error(f"❌ Ошибка LLM-сервиса: {str(e)}")
             return []
+
+    async def translate_to_english(self, russian_text: str) -> str:
+        prompt = f"Translate the following text to natural, engaging English suitable for a TikTok/Shorts video voiceover. Do not output anything other than the translated text itself. No intros, no quotes.\n\nText: {russian_text}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
+                }
+                response = await client.post(self.url, json=payload, headers=self.headers)
+                if response.status_code == 200:
+                    return response.json()['choices'][0]['message']['content'].strip()
+                return ""
+        except Exception as e:
+            logger.error(f"❌ Ошибка перевода: {e}")
+            return ""
