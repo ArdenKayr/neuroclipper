@@ -4,6 +4,7 @@ import os
 import asyncio
 import cv2
 from services.whisper import WhisperService
+from services.pexels import PexelsService
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +13,9 @@ class VideoRenderer:
         self.output_dir = "assets/results"
         os.makedirs(self.output_dir, exist_ok=True)
         self.whisper = WhisperService()
+        self.pexels = PexelsService()
 
     async def detect_faces(self, video_path: str, timestamp: float):
-        """Извлекает 1 кадр и ищет на нем координаты лиц"""
         frame_path = f"assets/temp_frame_{int(timestamp)}.jpg"
         
         cmd = [
@@ -40,7 +41,7 @@ class VideoRenderer:
         faces_list = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
         return faces_list, w, h
 
-    async def create_short(self, local_video_path: str, start_time: float, end_time: float, title: str, job_id: int) -> str:
+    async def create_short(self, local_video_path: str, start_time: float, end_time: float, title: str, job_id: int, b_roll_query: str = None) -> str:
         output_filename = f"clip_{job_id}_{int(start_time)}.mp4"
         output_path = os.path.join(self.output_dir, output_filename)
         
@@ -49,14 +50,12 @@ class VideoRenderer:
         duration = safe_end - safe_start
         mid_time = safe_start + (duration / 2)
 
-        # --- 1. ГЕНЕРАЦИЯ СУБТИТРОВ ---
-        # ИСПРАВЛЕНИЕ: Выгружаем в идеальный WAV, чтобы не было сдвига таймкодов от MP3
         clip_audio = f"assets/temp_audio_{job_id}_{int(start_time)}.wav" 
         ass_path = f"assets/temp_sub_{job_id}_{int(start_time)}.ass"
         has_subs = False
         
         try:
-            # Извлекаем аудио в WAV с принудительной синхронизацией aresample
+            # 1. АУДИО И СУБТИТРЫ
             cmd_audio = [
                 "ffmpeg", "-y", "-ss", str(safe_start), "-i", local_video_path,
                 "-t", str(duration), "-vn", 
@@ -67,7 +66,6 @@ class VideoRenderer:
             process_aud = await asyncio.create_subprocess_exec(*cmd_audio, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             await process_aud.communicate()
 
-            # Получаем ИДЕАЛЬНЫЙ ASS файл через ИИ
             if os.path.exists(clip_audio):
                 logger.info("--- [📝] Отправляю аудио (WAV) в Whisper для генерации субтитров...")
                 ass_text = await self.whisper.generate_karaoke_ass(clip_audio)
@@ -77,14 +75,20 @@ class VideoRenderer:
                     has_subs = True
                 os.remove(clip_audio)
 
-            # --- 2. СМАРТ КРОП И СПЛИТСКРИН (с исправлением PTS) ---
-            # ИСПРАВЛЕНИЕ: Добавлен setpts=PTS-STARTPTS, чтобы жестко обнулить счетчик времени видео для субтитров
+            # 2. СКАЧИВАЕМ B-ROLL
+            broll_path = None
+            if b_roll_query:
+                broll_temp = f"assets/temp_broll_{job_id}_{int(start_time)}.mp4"
+                broll_path = await self.pexels.download_broll(b_roll_query, broll_temp)
+
+            # 3. СБОРКА ГРАФА ФИЛЬТРОВ FFmpeg
             faces_data = await self.detect_faces(local_video_path, mid_time)
-            base_filter = ""
+            filters = []
             
+            # А) Базовый видеоряд
             if not faces_data or len(faces_data[0]) == 0:
                 logger.info("--- [👁️] Лица не найдены, делаю стандартный кроп.")
-                base_filter = "[0:v]setpts=PTS-STARTPTS,crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280"
+                filters.append("[0:v]setpts=PTS-STARTPTS,crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280[bg]")
             else:
                 faces, vid_w, vid_h = faces_data
                 if len(faces) >= 2:
@@ -100,11 +104,11 @@ class VideoRenderer:
                     x1 = max(0, min(vid_w - crop_w, c1_x - crop_w / 2))
                     x2 = max(0, min(vid_w - crop_w, c2_x - crop_w / 2))
                     
-                    base_filter = (
+                    filters.append(
                         f"[0:v]setpts=PTS-STARTPTS,split=2[v1][v2]; "
                         f"[v1]crop={crop_w}:{crop_h}:{x1}:0[top]; "
                         f"[v2]crop={crop_w}:{crop_h}:{x2}:{vid_h/2}[bottom]; "
-                        f"[top][bottom]vstack,scale=720:1280"
+                        f"[top][bottom]vstack,scale=720:1280[bg]"
                     )
                 else:
                     logger.info("--- [👤] Найдено 1 лицо! Делаю смарт-кроп.")
@@ -113,31 +117,47 @@ class VideoRenderer:
                     crop_w = vid_h * 9/16
                     x = max(0, min(vid_w - crop_w, center_x - crop_w / 2))
                     
-                    base_filter = f"[0:v]setpts=PTS-STARTPTS,crop={crop_w}:{vid_h}:{x}:0,scale=720:1280"
+                    filters.append(f"[0:v]setpts=PTS-STARTPTS,crop={crop_w}:{vid_h}:{x}:0,scale=720:1280[bg]")
 
-            # --- 3. НАЛОЖЕНИЕ СУБТИТРОВ ---
+            # Б) Наложение B-Roll
+            if broll_path:
+                filters.append("[1:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setpts=PTS-STARTPTS[broll]")
+                filters.append("[bg][broll]overlay=x=0:y=0:enable='between(t,1.5,4.5)':eof_action=pass[vid_broll]")
+                bg_out = "[vid_broll]"
+            else:
+                bg_out = "[bg]"
+
+            # В) Наложение Субтитров поверх всего
             if has_subs:
                 logger.info("--- [✨] Вшиваем субтитры в видео...")
                 abs_ass_path = os.path.abspath(ass_path).replace('\\', '/')
                 abs_ass_path = abs_ass_path.replace(':', '\\:')
-                
-                filter_complex = f"{base_filter},subtitles='{abs_ass_path}'[vout]"
+                filters.append(f"{bg_out}subtitles='{abs_ass_path}'[vout]")
             else:
-                filter_complex = f"{base_filter}[vout]"
+                filters.append(f"{bg_out}null[vout]")
 
-            # Финальный рендер
+            filter_complex = "; ".join(filters)
+
+            # 4. ЗАПУСК FFMPEG
             command = [
                 "ffmpeg", "-y",
                 "-ss", str(safe_start),
-                "-i", local_video_path,
+                "-i", local_video_path
+            ]
+            
+            # Если есть b-roll, добавляем его как закольцованный вход
+            if broll_path:
+                command.extend(["-stream_loop", "-1", "-i", broll_path])
+                
+            command.extend([
                 "-t", str(duration),
                 "-filter_complex", filter_complex,
                 "-map", "[vout]", "-map", "0:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                 "-c:a", "aac", "-b:a", "128k",
-                "-af", "aresample=async=1", # Гарантия, что звук не "уплывет" при сборке
+                "-af", "aresample=async=1",
                 output_path
-            ]
+            ])
 
             logger.info(f"--- [⚙️] FFmpeg: Финальный рендер {output_filename}")
             process = await asyncio.create_subprocess_exec(
@@ -156,7 +176,8 @@ class VideoRenderer:
             return None
         finally:
             if os.path.exists(ass_path):
-                try:
-                    os.remove(ass_path)
-                except:
-                    pass
+                try: os.remove(ass_path)
+                except: pass
+            if broll_path and os.path.exists(broll_path):
+                try: os.remove(broll_path)
+                except: pass

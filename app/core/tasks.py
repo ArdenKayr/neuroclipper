@@ -14,8 +14,6 @@ from core.config import settings
 logger = logging.getLogger(__name__)
 
 async def _async_process_job(job_id: int):
-    # 1. ИЗОЛИРОВАННАЯ БД: Создаем движок локально для текущей задачи.
-    # Это навсегда решает проблему "Event loop is closed" в Celery.
     db_url = settings.DATABASE_URL
     if db_url and db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -23,7 +21,6 @@ async def _async_process_job(job_id: int):
     local_engine = create_async_engine(db_url, pool_pre_ping=True)
     LocalSession = async_sessionmaker(bind=local_engine, expire_on_commit=False)
     
-    # Изолированный инстанс бота для безопасной отправки сообщений
     bot = Bot(token=settings.BOT_TOKEN)
 
     try:
@@ -35,7 +32,6 @@ async def _async_process_job(job_id: int):
             if not data: return
             job, user = data
 
-            # Интерактивный UX: Уведомляем пользователя
             status_msg = await bot.send_message(
                 chat_id=user.tg_id, 
                 text="⏳ **Видео скачано!**\nСлушаю аудио и ищу виральные моменты через ИИ...", 
@@ -53,18 +49,19 @@ async def _async_process_job(job_id: int):
                 raise Exception("Анализ не удался")
 
             await bot.edit_message_text(
-                f"✅ **Найдено {len(highlights)} хайлайтов!**\nНачинаю нарезку и обработку кадров (FFmpeg)...",
+                f"✅ **Найдено {len(highlights)} хайлайтов!**\nНачинаю нарезку, поиск B-Rolls и рендер...",
                 chat_id=user.tg_id, message_id=status_msg.message_id, parse_mode="Markdown"
             )
 
             renderer = VideoRenderer()
-            for i, clip in enumerate(highlights[:3]): # Берем 3 для теста
+            for i, clip in enumerate(highlights[:3]):
                 final_path = await renderer.create_short(
                     local_video_path=local_raw_path,
                     start_time=clip['start'],
                     end_time=clip['end'],
                     title=clip.get('title', f'Clip {i+1}'),
-                    job_id=job.id
+                    job_id=job.id,
+                    b_roll_query=clip.get('b_roll_query')  # 🔥 ПЕРЕДАЕМ ЗАПРОС НА B-ROLL
                 )
 
                 if final_path and os.path.exists(final_path):
@@ -94,7 +91,6 @@ async def _async_process_job(job_id: int):
         except Exception:
             pass
     finally:
-        # 2. ОЧИСТКА ПАМЯТИ: Корректно закрываем соединения
         await local_engine.dispose()
         await bot.session.close()
 

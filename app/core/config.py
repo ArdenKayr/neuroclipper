@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     CREATOMATE_TEMPLATE_ID: str
     CAPTIONS_API_KEY: Optional[str] = None
     
+    # --- НОВЫЙ КЛЮЧ PEXELS ---
+    PEXELS_API_KEY: Optional[str] = None
+    
     ENABLE_VIZARD: bool = False
     VIZARD_API_KEY: Optional[str] = None
     TWELVE_LABS_API_KEY: Optional[str] = None

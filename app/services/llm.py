@@ -38,6 +38,7 @@ CRITICAL RULES FOR CONTEXT AND TIMESTAMPS:
 3. The start and end timestamps MUST match exactly with the timestamps provided in the text for those exact quotes.
 4. Length: 30 to 60 seconds.
 5. "title" and "reason" MUST be in Russian.
+6. "b_roll_query" MUST be a 1-2 word search term in English for a background stock video that visually matches the core topic of the clip (e.g. "money falling", "sad man", "business meeting", "fast car").
 
 FORMAT:
 [
@@ -47,7 +48,8 @@ FORMAT:
     "start_quote": "The exact first five words",
     "end_quote": "The exact last five words",
     "title": "Название на русском", 
-    "reason": "Почему этот момент станет виральным"
+    "reason": "Почему этот момент станет виральным",
+    "b_roll_query": "english search term"
   }}
 ]
 
