@@ -50,22 +50,26 @@ class VideoRenderer:
         mid_time = safe_start + (duration / 2)
 
         # --- 1. ГЕНЕРАЦИЯ СУБТИТРОВ ---
-        clip_audio = f"assets/temp_audio_{job_id}_{int(start_time)}.mp3"
+        # ИСПРАВЛЕНИЕ: Выгружаем в идеальный WAV, чтобы не было сдвига таймкодов от MP3
+        clip_audio = f"assets/temp_audio_{job_id}_{int(start_time)}.wav" 
         ass_path = f"assets/temp_sub_{job_id}_{int(start_time)}.ass"
         has_subs = False
         
         try:
-            # Извлекаем аудио только для этого клипа
+            # Извлекаем аудио в WAV с принудительной синхронизацией aresample
             cmd_audio = [
                 "ffmpeg", "-y", "-ss", str(safe_start), "-i", local_video_path,
-                "-t", str(duration), "-vn", "-c:a", "libmp3lame", "-b:a", "128k", clip_audio
+                "-t", str(duration), "-vn", 
+                "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1", 
+                "-af", "aresample=async=1", 
+                clip_audio
             ]
             process_aud = await asyncio.create_subprocess_exec(*cmd_audio, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             await process_aud.communicate()
 
             # Получаем ИДЕАЛЬНЫЙ ASS файл через ИИ
             if os.path.exists(clip_audio):
-                logger.info("--- [📝] Отправляю аудио в Whisper для генерации ASS субтитров...")
+                logger.info("--- [📝] Отправляю аудио (WAV) в Whisper для генерации субтитров...")
                 ass_text = await self.whisper.generate_karaoke_ass(clip_audio)
                 if ass_text and len(ass_text.strip()) > 0:
                     with open(ass_path, "w", encoding="utf-8") as f:
@@ -73,13 +77,14 @@ class VideoRenderer:
                     has_subs = True
                 os.remove(clip_audio)
 
-            # --- 2. СМАРТ КРОП И СПЛИТСКРИН ---
+            # --- 2. СМАРТ КРОП И СПЛИТСКРИН (с исправлением PTS) ---
+            # ИСПРАВЛЕНИЕ: Добавлен setpts=PTS-STARTPTS, чтобы жестко обнулить счетчик времени видео для субтитров
             faces_data = await self.detect_faces(local_video_path, mid_time)
             base_filter = ""
             
             if not faces_data or len(faces_data[0]) == 0:
                 logger.info("--- [👁️] Лица не найдены, делаю стандартный кроп.")
-                base_filter = "[0:v]crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280"
+                base_filter = "[0:v]setpts=PTS-STARTPTS,crop=ih*9/16:ih:(iw-ow)/2:0,scale=720:1280"
             else:
                 faces, vid_w, vid_h = faces_data
                 if len(faces) >= 2:
@@ -96,8 +101,9 @@ class VideoRenderer:
                     x2 = max(0, min(vid_w - crop_w, c2_x - crop_w / 2))
                     
                     base_filter = (
-                        f"[0:v]crop={crop_w}:{crop_h}:{x1}:0[top]; "
-                        f"[0:v]crop={crop_w}:{crop_h}:{x2}:{vid_h/2}[bottom]; "
+                        f"[0:v]setpts=PTS-STARTPTS,split=2[v1][v2]; "
+                        f"[v1]crop={crop_w}:{crop_h}:{x1}:0[top]; "
+                        f"[v2]crop={crop_w}:{crop_h}:{x2}:{vid_h/2}[bottom]; "
                         f"[top][bottom]vstack,scale=720:1280"
                     )
                 else:
@@ -107,7 +113,7 @@ class VideoRenderer:
                     crop_w = vid_h * 9/16
                     x = max(0, min(vid_w - crop_w, center_x - crop_w / 2))
                     
-                    base_filter = f"[0:v]crop={crop_w}:{vid_h}:{x}:0,scale=720:1280"
+                    base_filter = f"[0:v]setpts=PTS-STARTPTS,crop={crop_w}:{vid_h}:{x}:0,scale=720:1280"
 
             # --- 3. НАЛОЖЕНИЕ СУБТИТРОВ ---
             if has_subs:
@@ -115,7 +121,6 @@ class VideoRenderer:
                 abs_ass_path = os.path.abspath(ass_path).replace('\\', '/')
                 abs_ass_path = abs_ass_path.replace(':', '\\:')
                 
-                # Просто указываем файл, так как ASS формат уже содержит 100% инструкций по стилю
                 filter_complex = f"{base_filter},subtitles='{abs_ass_path}'[vout]"
             else:
                 filter_complex = f"{base_filter}[vout]"
@@ -130,6 +135,7 @@ class VideoRenderer:
                 "-map", "[vout]", "-map", "0:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                 "-c:a", "aac", "-b:a", "128k",
+                "-af", "aresample=async=1", # Гарантия, что звук не "уплывет" при сборке
                 output_path
             ]
 
