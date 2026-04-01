@@ -8,7 +8,11 @@ logger = logging.getLogger(__name__)
 class PexelsService:
     def __init__(self):
         self.api_key = settings.PEXELS_API_KEY
-        self.headers = {"Authorization": self.api_key} if self.api_key else {}
+        # Добавляем User-Agent, чтобы CDN Pexels думал, что мы обычный браузер Chrome
+        self.headers = {
+            "Authorization": self.api_key if self.api_key else "",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
 
     async def download_broll(self, query: str, output_path: str) -> str:
         if not self.api_key:
@@ -16,8 +20,8 @@ class PexelsService:
             return None
             
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Ищем вертикальное видео
+            # Обязательно follow_redirects=True, так как Pexels перенаправляет ссылки
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&size=medium&per_page=3"
                 res = await client.get(url, headers=self.headers)
                 res.raise_for_status()
@@ -27,7 +31,6 @@ class PexelsService:
                     logger.warning(f"⚠️ Pexels: Ничего не найдено по запросу '{query}'")
                     return None
                 
-                # Берем лучшее HD-видео
                 video_files = data["videos"][0].get("video_files", [])
                 if not video_files: 
                     return None
@@ -38,7 +41,10 @@ class PexelsService:
                 download_url = best_file["link"]
                 
                 logger.info(f"--- [🎥] Скачиваю B-Roll '{query}' с Pexels...")
-                video_res = await client.get(download_url)
+                
+                # Для скачивания самого видео используем только User-Agent (без API ключа, чтобы не смущать CDN)
+                cdn_headers = {"User-Agent": self.headers["User-Agent"]}
+                video_res = await client.get(download_url, headers=cdn_headers)
                 video_res.raise_for_status()
                 
                 with open(output_path, "wb") as f:
