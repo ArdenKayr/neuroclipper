@@ -59,10 +59,8 @@ class VideoRenderer:
         try:
             # 1. АУДИО И СУБТИТРЫ
             if dubbed_audio_path and os.path.exists(dubbed_audio_path):
-                # Берем готовую озвучку
                 audio_source = dubbed_audio_path
             else:
-                # Извлекаем оригинальное аудио
                 audio_source = f"assets/temp_audio_{job_id}_{int(start_time)}.wav" 
                 cmd_audio = [
                     "ffmpeg", "-y", "-ss", str(safe_start), "-i", local_video_path,
@@ -74,7 +72,6 @@ class VideoRenderer:
                 process_aud = await asyncio.create_subprocess_exec(*cmd_audio, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 await process_aud.communicate()
 
-            # Получаем ASS субтитры (синхронизированные с выбранным аудио!)
             if os.path.exists(audio_source):
                 logger.info("--- [📝] Отправляю аудио в Whisper для генерации субтитров...")
                 ass_text = await self.whisper.generate_karaoke_ass(audio_source)
@@ -83,12 +80,14 @@ class VideoRenderer:
                         f.write(ass_text)
                     has_subs = True
                 
-                # Удаляем wav только если это был временный файл из оригинала
                 if not dubbed_audio_path:
                     os.remove(audio_source)
 
-            # 2. СКАЧИВАЕМ B-ROLL (Пока отключено)
+            # 2. СКАЧИВАЕМ B-ROLL
             broll_path = None
+            if b_roll_query:
+                broll_temp = f"assets/temp_broll_{job_id}_{int(start_time)}.mp4"
+                broll_path = await self.pexels.download_broll(b_roll_query, broll_temp)
 
             # 3. СБОРКА ГРАФА ФИЛЬТРОВ FFmpeg
             faces_data = await self.detect_faces(local_video_path, mid_time)
@@ -108,7 +107,10 @@ class VideoRenderer:
                     c1_x = f1_x + f1_w / 2
                     c2_x = f2_x + f2_w / 2
                     crop_h = vid_h / 2
-                    crop_w = crop_h * 9/16
+                    
+                    # ИСПРАВЛЕНИЕ: Ширина кропа рассчитывается от полной высоты видео, а не от половины!
+                    crop_w = vid_h * 9 / 16
+                    
                     x1 = max(0, min(vid_w - crop_w, c1_x - crop_w / 2))
                     x2 = max(0, min(vid_w - crop_w, c2_x - crop_w / 2))
                     
@@ -189,4 +191,7 @@ class VideoRenderer:
         finally:
             if os.path.exists(ass_path):
                 try: os.remove(ass_path)
+                except: pass
+            if broll_path and os.path.exists(broll_path):
+                try: os.remove(broll_path)
                 except: pass
