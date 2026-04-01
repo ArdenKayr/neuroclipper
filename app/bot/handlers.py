@@ -5,7 +5,7 @@ from services.validator import LinkValidator
 from models.database import AsyncSessionLocal
 from models.db_models import User, Job
 from sqlalchemy import select
-from core.tasks import process_video_job
+from core.tasks import process_video_job, dub_video_job
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -62,5 +62,24 @@ async def handle_link(message: types.Message):
 
     await status_msg.edit_text(f"✅ Видео «{metadata['title']}» принято!\n⏳ Длительность: {metadata['duration'] // 60} мин.\n\nНачинаю обработку... [⏳ Скачивание...]")
     
-    # 4. Отправка в Celery (ЗДЕСЬ БЫЛА ОШИБКА, ТЕПЕРЬ ИСПРАВЛЕНО)
+    # 4. Отправка в Celery
     process_video_job.delay(job_id)
+
+
+# --- НОВЫЙ ОБРАБОТЧИК ДЛЯ КНОПКИ ДАББИНГА ---
+@router.callback_query(F.data.startswith("dub_"))
+async def handle_dub_callback(callback: types.CallbackQuery):
+    # Парсим данные из кнопки: dub_{job_id}_{start_time}_{end_time}
+    parts = callback.data.split("_")
+    if len(parts) != 4:
+        return await callback.answer("❌ Ошибка данных", show_alert=True)
+        
+    job_id = int(parts[1])
+    start_time = float(parts[2])
+    end_time = float(parts[3])
+    
+    await callback.message.answer("🇺🇸 Отлично! Запускаю нейросети для перевода и американской озвучки...\nЭто займет пару минут. ⏳")
+    await callback.answer()
+    
+    # Запускаем новую таску на даббинг
+    dub_video_job.delay(job_id, start_time, end_time, callback.from_user.id)
